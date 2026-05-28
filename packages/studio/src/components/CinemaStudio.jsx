@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import toast, { Toaster } from "react-hot-toast";
 import { generateImage, uploadFile } from "../muapi.js";
 
 // ─── Constants (inlined from promptUtils) ───────────────────────────────────
@@ -283,7 +284,7 @@ function ScrollColumn({ title, items, columnKey, value, onChange }) {
 
   return (
     <div className="flex flex-col items-center relative w-[130px] md:w-[150px] shrink-0 snap-center">
-      <div className="mb-4 text-[10px] font-black text-white/20 uppercase tracking-[0.25em] text-center">
+      <div className="mb-4 text-[10px] font-black text-white/45 uppercase tracking-[0.25em] text-center">
         {title}
       </div>
       <div className="relative overflow-hidden w-full h-[280px] md:h-[300px] bg-gradient-to-b from-white/[0.02] to-transparent rounded-2xl border border-white/[0.03] shadow-2xl backdrop-blur-3xl group">
@@ -372,6 +373,10 @@ function CameraControlsOverlay({
   return (
     <div
       ref={backdropRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Camera configuration"
+      aria-hidden={!isOpen}
       className={`fixed inset-0 bg-[#0a0a0a]/80 backdrop-blur-2xl z-[100] flex items-center justify-center transition-all duration-500 ${isOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
       onClick={handleBackdropClick}
     >
@@ -387,8 +392,10 @@ function CameraControlsOverlay({
             <div className="h-[1px] w-12 bg-primary/40" />
           </div>
           <button
+            type="button"
+            aria-label="Close camera configuration"
             onClick={onClose}
-            className="w-10 h-10 rounded-full hover:bg-white/5 flex items-center justify-center text-white/20 hover:text-white transition-all"
+            className="w-10 h-10 rounded-full hover:bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-all"
           >
             <svg
               width="20"
@@ -496,6 +503,7 @@ export default function CinemaStudio({
       if (url) setUploadedImage(url);
     } catch (err) {
       console.error("Image upload failed:", err);
+      toast.error(`Image upload failed: ${err.message}`);
     } finally {
       setIsUploadingImage(false);
       setImageUploadProgress(0);
@@ -561,6 +569,19 @@ export default function CinemaStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyItems]);
 
+  // ── Escape closes the open viewer / overlay / dropdown (top-most first) ──
+  useEffect(() => {
+    if (!openDropdown && !fullscreenUrl && !isOverlayOpen) return;
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (fullscreenUrl) setFullscreenUrl(null);
+      else if (isOverlayOpen) setIsOverlayOpen(false);
+      else if (openDropdown) setOpenDropdown(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openDropdown, fullscreenUrl, isOverlayOpen]);
+
   const formatSummaryValue = () =>
     `${settings.lens}, ${settings.focal}mm, ${settings.aperture}`;
 
@@ -618,6 +639,7 @@ export default function CinemaStudio({
         }
 
         setCanvasUrl(res.url);
+        toast.success("Shot ready");
 
         if (onGenerationComplete) {
           onGenerationComplete({
@@ -628,11 +650,11 @@ export default function CinemaStudio({
           });
         }
       } else {
-        throw new Error("No data returned");
+        throw new Error("No image was returned by the API");
       }
     } catch (e) {
       console.error(e);
-      alert("Generation Failed: " + e.message);
+      toast.error(`Generation failed: ${e.message?.slice(0, 120) || "unknown error"}`);
     } finally {
       setIsGenerating(false);
     }
@@ -712,18 +734,49 @@ export default function CinemaStudio({
       
       {/* ── CENTRAL GALLERY AREA ── */}
       <div className="flex-1 w-full max-w-7xl mx-auto overflow-y-auto custom-scrollbar pb-40 lg:pb-32 px-2">
-        {history.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full pt-4 animate-fade-in-up">
+        {isGenerating || history.length > 0 ? (
+          <div className="w-full pt-4">
+            <div className="flex items-center justify-between pb-3 px-1">
+              <span className="text-xs font-bold text-white/40 tracking-wide uppercase">
+                {history.length} {history.length === 1 ? "shot" : "shots"}
+              </span>
+              {(history.length > 0 || settings.prompt) && (
+                <button
+                  type="button"
+                  onClick={resetToPrompt}
+                  aria-label="Start a new shot"
+                  className="text-[11px] font-semibold text-white/50 hover:text-primary transition-colors flex items-center gap-1.5"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  New
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full animate-fade-in-up">
+            {isGenerating && (
+              <div className="relative rounded-lg overflow-hidden border border-primary/30 bg-[#0a0a0a] shadow-xl">
+                <div className="w-full aspect-[4/3] bg-gradient-to-br from-white/[0.03] to-white/[0.08] animate-pulse flex flex-col items-center justify-center gap-2">
+                  <span className="animate-spin inline-block text-primary text-2xl leading-none">◌</span>
+                  <span className="text-[10px] font-bold text-white/50 tracking-wide uppercase">Shooting…</span>
+                </div>
+              </div>
+            )}
             {history.map((entry, idx) => (
               <div
                 key={entry.timestamp ?? idx}
-                className="relative group rounded-lg overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-xl hover:border-[#22d3ee]/50 transition-all duration-300 flex flex-col cursor-pointer"
+                className="relative group rounded-lg overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-xl hover:border-primary/50 transition-all duration-300 flex flex-col cursor-pointer"
                 onClick={() => loadHistoryItem(entry, idx)}
+                title="Click to reuse these settings"
               >
                 <img
                   src={entry.url}
-                  alt={`History item ${idx + 1}`}
-                  className="w-full aspect-[4/3] object-cover bg-black/40"
+                  alt={entry.settings?.prompt?.substring(0, 60) || `Cinema shot ${idx + 1}`}
+                  loading="lazy"
+                  style={{ aspectRatio: (entry.settings?.aspect_ratio || "4:3").replace(":", " / ") }}
+                  className="w-full object-cover bg-black/40"
                 />
                 
                 {/* Overlay actions */}
@@ -731,11 +784,12 @@ export default function CinemaStudio({
                   <button
                     type="button"
                     title="Fullscreen"
+                    aria-label="View shot fullscreen"
                     onClick={(e) => {
                       e.stopPropagation();
                       setFullscreenUrl(entry.url);
                     }}
-                    className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-[#22d3ee] hover:text-black transition-all border border-white/10"
+                    className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <polyline points="15 3 21 3 21 9" />
@@ -747,6 +801,7 @@ export default function CinemaStudio({
                   <button
                     type="button"
                     title="Download"
+                    aria-label="Download shot"
                     onClick={async (e) => {
                       e.stopPropagation();
                       try {
@@ -764,12 +819,34 @@ export default function CinemaStudio({
                         window.open(entry.url, "_blank");
                       }
                     }}
-                    className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-[#22d3ee] hover:text-black transition-all border border-white/10"
+                    className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
                       <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
                     </svg>
                   </button>
+                  {entry.settings?.prompt && (
+                    <button
+                      type="button"
+                      title="Copy prompt"
+                      aria-label="Copy prompt to clipboard"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (navigator.clipboard?.writeText) {
+                          navigator.clipboard.writeText(entry.settings.prompt).then(
+                            () => toast.success("Prompt copied"),
+                            () => toast.error("Couldn't copy prompt"),
+                          );
+                        }
+                      }}
+                      className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
 
                 {/* Details */}
@@ -778,7 +855,7 @@ export default function CinemaStudio({
                     {entry.settings?.prompt || "No prompt"}
                   </p>
                   <div className="flex items-center justify-between mt-1 flex-wrap gap-1">
-                    <span className="text-[10px] font-bold text-[#22d3ee] px-2 py-0.5 bg-[#22d3ee]/10 rounded border border-[#22d3ee]/20">
+                    <span className="text-[10px] font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20">
                       {entry.settings?.camera || "Standard"}
                     </span>
                     <div className="flex gap-2">
@@ -791,6 +868,7 @@ export default function CinemaStudio({
                 </div>
               </div>
             ))}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-center px-4 animate-fade-in-up transition-all duration-700 min-h-[50vh]">
@@ -813,6 +891,35 @@ export default function CinemaStudio({
             <p className="text-white/40 text-sm md:text-base font-medium tracking-wide text-center max-w-lg leading-relaxed">
               What would you shoot with infinite budget?
             </p>
+            {/* Example prompt chips — click to start */}
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-2 max-w-xl px-4">
+              {[
+                "A lone figure on a rain-slicked neon street at night",
+                "Golden-hour desert dunes, vast and cinematic",
+                "Close-up of a vintage car dashboard, warm tungsten glow",
+                "Misty mountain ridge at dawn, epic wide establishing shot",
+              ].map((ex) => (
+                <button
+                  key={ex}
+                  type="button"
+                  onClick={() => {
+                    setSettings((prev) => ({ ...prev, prompt: ex }));
+                    setTimeout(() => {
+                      const el = textareaRef.current;
+                      if (el) {
+                        el.value = ex;
+                        el.style.height = "auto";
+                        el.style.height = el.scrollHeight + "px";
+                        el.focus();
+                      }
+                    }, 30);
+                  }}
+                  className="text-[11px] text-white/50 hover:text-white bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-primary/40 rounded-full px-3.5 py-2 transition-all max-w-full truncate"
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -835,6 +942,8 @@ export default function CinemaStudio({
                 />
                 
                 <button
+                  type="button"
+                  aria-label={uploadedImage ? "Remove reference image" : "Upload reference image"}
                   onClick={() =>
                     uploadedImage
                       ? removeImage()
@@ -894,13 +1003,31 @@ export default function CinemaStudio({
                 </button>
               </div>
 
-              <textarea
-                ref={textareaRef}
-                placeholder="Describe your cinema scene..."
-                className="w-full bg-transparent border-none text-white text-sm placeholder:text-white/10 focus:outline-none resize-none pt-1 leading-relaxed min-h-[40px] max-h-[150px] md:max-h-[250px] overflow-y-auto custom-scrollbar disabled:opacity-40"
-                rows={1}
-                onInput={handleTextareaInput}
-              />
+              <div className="flex-1 flex flex-col gap-1">
+                <textarea
+                  ref={textareaRef}
+                  placeholder="Describe your cinema scene..."
+                  aria-label="Cinema scene prompt"
+                  className="w-full bg-transparent border-none text-white text-sm placeholder:text-white/10 focus:outline-none resize-none pt-1 leading-relaxed min-h-[40px] max-h-[150px] md:max-h-[250px] overflow-y-auto custom-scrollbar disabled:opacity-40"
+                  rows={1}
+                  onInput={handleTextareaInput}
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                      e.preventDefault();
+                      if (!isGenerating && settings.prompt.trim()) handleGenerate();
+                    }
+                  }}
+                />
+                {settings.prompt.length > 0 && (
+                  <div className="flex items-center justify-end gap-2 pr-1 text-[10px] text-white/30 select-none">
+                    <span>{settings.prompt.length} chars</span>
+                    <span className="hidden sm:inline text-white/20">·</span>
+                    <span className="hidden sm:inline">
+                      <kbd className="font-sans">⌘</kbd>/<kbd className="font-sans">Ctrl</kbd>+<kbd className="font-sans">↵</kbd> to shoot
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex justify-between gap-2">
               <div className="flex flex-wrap items-center gap-3">
@@ -908,6 +1035,8 @@ export default function CinemaStudio({
                 <div className="relative">
                   <button
                     ref={arBtnRef}
+                    type="button"
+                    aria-label="Aspect ratio"
                     className="flex items-center gap-1.5 px-3 py-1 bg-white/[0.03] hover:bg-white/10 text-xs font-bold text-white/40 hover:text-white transition-colors rounded-md border border-white/[0.03]"
                     onClick={() =>
                       setOpenDropdown((d) => (d === "ar" ? null : "ar"))
@@ -935,6 +1064,8 @@ export default function CinemaStudio({
                 <div className="relative">
                   <button
                     ref={resBtnRef}
+                    type="button"
+                    aria-label="Resolution"
                     className="flex items-center gap-1.5 px-3 py-1 bg-white/[0.03] hover:bg-white/10 text-xs font-bold text-white/40 hover:text-white transition-colors rounded-md border border-white/[0.03]"
                     onClick={() =>
                       setOpenDropdown((d) => (d === "res" ? null : "res"))
@@ -959,21 +1090,25 @@ export default function CinemaStudio({
               <div className="flex items-center gap-3 h-full self-end mb-1">
                 {/* Summary Card (triggers overlay) */}
                 <button
+                  type="button"
+                  aria-label="Open camera configuration"
                   className="flex flex-col items-start justify-center px-4 py-1.5 bg-white/[0.03] rounded-md border border-white/[0.03] hover:border-white/20 transition-all text-left flex-1 min-w-[100px] md:min-w-[160px] max-w-[240px] h-[50px] relative group overflow-hidden"
                   onClick={() => setIsOverlayOpen(true)}
                 >
-                  <div className="absolute top-3 right-3 w-1.5 h-1.5 bg-[#22d3ee] rounded-full shadow-lg shadow-[#22d3ee]/20" />
+                  <div className="absolute top-3 right-3 w-1.5 h-1.5 bg-primary rounded-full shadow-lg shadow-primary/20" />
                   <span className="text-[9px] font-bold text-white/30 uppercase truncate w-full tracking-wider group-hover:text-white transition-colors">
                     {settings.camera}
                   </span>
-                  <span className="text-xs font-semibold text-white/70 truncate w-full group-hover:text-[#22d3ee] transition-colors">
+                  <span className="text-xs font-semibold text-white/70 truncate w-full group-hover:text-primary transition-colors">
                     {formatSummaryValue()}
                   </span>
                 </button>
 
                 {/* Generate Button */}
                 <button
-                  className="h-[50px] px-8 bg-[#22d3ee] text-black rounded-md font-medium text-sm hover:bg-[#e5ff33] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#22d3ee]/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button"
+                  aria-label="Generate cinema shot"
+                  className="h-[50px] px-8 bg-primary text-black rounded-md font-medium text-sm hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:brightness-100"
                   disabled={isGenerating || !settings.prompt.trim()}
                   onClick={handleGenerate}
                 >
@@ -993,12 +1128,16 @@ export default function CinemaStudio({
         </div>
       </div>
       {fullscreenUrl && (
-        <div 
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Shot preview"
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm animate-fade-in"
           onClick={() => setFullscreenUrl(null)}
         >
           <button
             type="button"
+            aria-label="Close shot preview"
             className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors border border-white/10"
             onClick={(e) => {
               e.stopPropagation();
@@ -1024,6 +1163,20 @@ export default function CinemaStudio({
         onClose={() => setIsOverlayOpen(false)}
         settings={settings}
         onSettingsChange={setSettings}
+      />
+
+      {/* Non-blocking toast notifications (replaces native alert) */}
+      <Toaster
+        position="bottom-right"
+        reverseOrder={false}
+        toastOptions={{
+          style: {
+            background: "#0a0a0a",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.1)",
+            fontSize: "13px",
+          },
+        }}
       />
     </div>
   );
