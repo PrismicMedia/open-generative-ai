@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import toast, { Toaster } from "react-hot-toast";
 import { generateImage, generateI2I, uploadFile } from "../muapi.js";
 import {
   t2iModels,
@@ -115,7 +116,7 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [] }
     const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
     const tooLarge = files.filter((f) => f.size > MAX_IMAGE_SIZE);
     if (tooLarge.length > 0) {
-      alert(
+      toast.error(
         `The following images are too large (max 10MB): ${tooLarge.map((f) => f.name).join(", ")}`,
       );
       return;
@@ -172,7 +173,7 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [] }
         }),
       );
     } catch (err) {
-      alert(`Image upload failed: ${err.message}`);
+      toast.error(`Image upload failed: ${err.message}`);
     } finally {
       setUploading(false);
       setLastUploadProgress(0);
@@ -410,6 +411,8 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [] }
         ref={triggerRef}
         type="button"
         title={triggerTitle}
+        aria-label={triggerTitle}
+        aria-expanded={panelOpen}
         onClick={(e) => {
           e.stopPropagation();
           setPanelOpen((o) => !o);
@@ -538,6 +541,7 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [] }
                         <button
                           type="button"
                           title="Remove from history"
+                          aria-label="Remove image from history"
                           onClick={(e) => handleRemoveFromHistory(e, entry)}
                           className="w-5 h-5 bg-red-500/80 hover:bg-red-500 rounded-md flex items-center justify-center transition-colors"
                         >
@@ -637,6 +641,8 @@ function ModelDropdown({ models, selectedModel, onSelect, onClose }) {
             value={search}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => setSearch(e.target.value)}
+            autoFocus
+            aria-label="Search image models"
             className="bg-transparent border-none text-xs text-white focus:ring-0 w-full p-0 focus:outline-none"
           />
         </div>
@@ -681,8 +687,10 @@ function ModelDropdown({ models, selectedModel, onSelect, onClose }) {
                 height="16"
                 viewBox="0 0 24 24"
                 fill="none"
-                stroke="#22d3ee"
+                stroke="currentColor"
                 strokeWidth="4"
+                className="text-primary"
+                aria-hidden="true"
               >
                 <polyline points="20 6 9 17 4 12" />
               </svg>
@@ -722,8 +730,10 @@ function SimpleDropdown({ title, options, selected, onSelect, onClose }) {
                 height="16"
                 viewBox="0 0 24 24"
                 fill="none"
-                stroke="#22d3ee"
+                stroke="currentColor"
                 strokeWidth="4"
+                className="text-primary"
+                aria-hidden="true"
               >
                 <polyline points="20 6 9 17 4 12" />
               </svg>
@@ -792,9 +802,26 @@ export default function ImageStudio({
         setDropdownOpen(null);
       }
     };
+    const keyHandler = (e) => {
+      if (e.key === "Escape") setDropdownOpen(null);
+    };
     window.addEventListener("click", handler);
-    return () => window.removeEventListener("click", handler);
+    window.addEventListener("keydown", keyHandler);
+    return () => {
+      window.removeEventListener("click", handler);
+      window.removeEventListener("keydown", keyHandler);
+    };
   }, [dropdownOpen]);
+
+  // ── close fullscreen viewer on Escape ────────────────────────────────────
+  useEffect(() => {
+    if (!fullscreenUrl) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setFullscreenUrl(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreenUrl]);
 
   // ── Persistence: Load ────────────────────────────────────────────────────
   useEffect(() => {
@@ -868,7 +895,7 @@ export default function ImageStudio({
     const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
     const tooLarge = files.filter((f) => f.size > MAX_IMAGE_SIZE);
     if (tooLarge.length > 0) {
-      alert(
+      toast.error(
         `The following images are too large (max 10MB): ${tooLarge.map((f) => f.name).join(", ")}`
       );
       return;
@@ -895,7 +922,7 @@ export default function ImageStudio({
 
       handleUploadSelect({ urls });
     } catch (err) {
-      alert(`Image upload failed: ${err.message}`);
+      toast.error(`Image upload failed: ${err.message}`);
     } finally {
       setGenerating(false);
     }
@@ -910,7 +937,9 @@ export default function ImageStudio({
       }
       onFilesHandled?.();
     }
-  }, [droppedFiles, onFilesHandled, processDroppedImages]);
+    // Only react to a new drop; handler reads fresh state via closure each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [droppedFiles]);
 
   // ── Derived: current model lists & helpers ───────────────────────────────
   const currentModels = imageMode ? i2iModels : t2iModels;
@@ -1030,12 +1059,12 @@ export default function ImageStudio({
 
     if (imageMode) {
       if (uploadedImageUrls.length === 0) {
-        alert("Please upload a reference image first.");
+        toast.error("Please upload a reference image first.");
         return;
       }
     } else {
       if (!prompt.trim()) {
-        alert("Please enter a prompt to generate an image.");
+        toast.error("Please enter a prompt to generate an image.");
         return;
       }
     }
@@ -1073,8 +1102,10 @@ export default function ImageStudio({
         })
       );
 
+      let okCount = 0;
       results.forEach((res) => {
         if (res && res.url) {
+          okCount += 1;
           const entry = {
             id: res.id || Math.random().toString(36).substring(7),
             url: res.url,
@@ -1092,9 +1123,17 @@ export default function ImageStudio({
           });
         }
       });
+
+      if (okCount > 0) {
+        toast.success(okCount > 1 ? `${okCount} images ready` : "Image ready");
+      } else {
+        throw new Error("No image was returned by the API");
+      }
     } catch (e) {
       console.error("[ImageStudio] Generation failed:", e);
-      setGenerateError(e.message.slice(0, 80));
+      const msg = e.message?.slice(0, 120) || "Generation failed";
+      setGenerateError(msg.slice(0, 80));
+      toast.error(msg);
       setTimeout(() => setGenerateError(null), 4000);
     } finally {
       setGenerating(false);
@@ -1114,8 +1153,40 @@ export default function ImageStudio({
       
       {/* ── CENTRAL GALLERY AREA ── */}
       <div className="flex-1 w-full max-w-7xl mx-auto overflow-y-auto custom-scrollbar pb-40 lg:pb-32 px-2">
-        {history.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 w-full pt-4 animate-fade-in-up">
+        {generating || history.length > 0 ? (
+          <div className="w-full pt-4">
+            <div className="flex items-center justify-between pb-3 px-1">
+              <span className="text-xs font-bold text-white/40 tracking-wide uppercase">
+                {history.length} {history.length === 1 ? "creation" : "creations"}
+              </span>
+              {(history.length > 0 || prompt || uploadedImageUrls.length > 0) && (
+                <button
+                  type="button"
+                  onClick={resetToPrompt}
+                  aria-label="Start a new image"
+                  className="text-[11px] font-semibold text-white/50 hover:text-primary transition-colors flex items-center gap-1.5"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  New
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 w-full animate-fade-in-up">
+            {generating &&
+              Array.from({ length: batchSize }).map((_, i) => (
+                <div
+                  key={`skeleton-${i}`}
+                  className="relative rounded-lg overflow-hidden border border-primary/30 bg-[#0a0a0a] shadow-xl"
+                >
+                  <div className="w-full aspect-square bg-gradient-to-br from-white/[0.03] to-white/[0.08] animate-pulse flex flex-col items-center justify-center gap-2">
+                    <span className="animate-spin inline-block text-primary text-2xl leading-none">◌</span>
+                    <span className="text-[10px] font-bold text-white/50 tracking-wide">Creating…</span>
+                  </div>
+                </div>
+              ))}
             {history.map((entry, idx) => (
               <div
                 key={entry.id || idx}
@@ -1123,8 +1194,10 @@ export default function ImageStudio({
               >
                 <img
                   src={entry.url}
-                  alt={entry.prompt?.substring(0, 30) || "Generated image"}
-                  className="w-full aspect-square object-cover bg-black/40 cursor-pointer hover:opacity-80 transition-opacity"
+                  alt={entry.prompt?.substring(0, 60) || "Generated image"}
+                  loading="lazy"
+                  style={{ aspectRatio: (entry.aspect_ratio || "1:1").replace(":", " / ") }}
+                  className="w-full object-cover bg-black/40 cursor-pointer hover:opacity-80 transition-opacity"
                   onClick={() => setFullscreenUrl(entry.url)}
                 />
                 
@@ -1133,13 +1206,14 @@ export default function ImageStudio({
                   <button
                     type="button"
                     title="Fullscreen"
+                    aria-label="View image fullscreen"
                     onClick={(e) => {
                       e.stopPropagation();
                       setFullscreenUrl(entry.url);
                     }}
                     className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
                       <polyline points="15 3 21 3 21 9" />
                       <polyline points="9 21 3 21 3 15" />
                       <line x1="21" y1="3" x2="14" y2="10" />
@@ -1149,16 +1223,56 @@ export default function ImageStudio({
                   <button
                     type="button"
                     title="Download"
+                    aria-label="Download image"
                     onClick={(e) => {
                       e.stopPropagation();
                       downloadImage(entry.url, `muapi-${entry.id || idx}.jpg`);
                     }}
                     className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
                       <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
                     </svg>
                   </button>
+                  <button
+                    type="button"
+                    title="Remix — use as reference image"
+                    aria-label="Remix: use this image as a reference"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleUploadSelect({ urls: [entry.url] });
+                      toast.success("Loaded as reference — describe your edit");
+                      setTimeout(() => textareaRef.current?.focus(), 50);
+                    }}
+                    className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                      <polyline points="23 4 23 10 17 10" />
+                      <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" />
+                    </svg>
+                  </button>
+                  {entry.prompt && (
+                    <button
+                      type="button"
+                      title="Copy prompt"
+                      aria-label="Copy prompt to clipboard"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (navigator.clipboard?.writeText) {
+                          navigator.clipboard.writeText(entry.prompt).then(
+                            () => toast.success("Prompt copied"),
+                            () => toast.error("Couldn't copy prompt"),
+                          );
+                        }
+                      }}
+                      className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
 
                 {/* Prompt & Details */}
@@ -1168,13 +1282,14 @@ export default function ImageStudio({
                   </p>
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-[10px] font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20">
-                      {entry.model?.replace("-", " ")}
+                      {entry.model?.replace(/-/g, " ")}
                     </span>
                     <span className="text-[10px] text-white/40">{entry.aspect_ratio}</span>
                   </div>
                 </div>
               </div>
             ))}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full animate-fade-in-up transition-all duration-700 min-h-[50vh]">
@@ -1207,8 +1322,32 @@ export default function ImageStudio({
               <span className="text-white">IMAGE STUDIO</span>
             </h1>
             <p className="text-white/40 text-sm md:text-base font-medium tracking-wide text-center max-w-lg leading-relaxed">
-              Describe a scene, character, mood, or style — and watch it come to life
+              Describe a scene, character, mood, or style — or drop an image to remix — and watch it come to life
             </p>
+            {/* Example prompt chips — click to start */}
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-2 max-w-xl px-4">
+              {[
+                "A serene Japanese garden in autumn, soft morning light",
+                "Portrait of an astronaut, cinematic lighting, ultra-detailed",
+                "Minimal product shot of a perfume bottle on marble",
+                "Watercolor illustration of a fox in a misty forest",
+              ].map((ex) => (
+                <button
+                  key={ex}
+                  type="button"
+                  onClick={() => {
+                    setPrompt(ex);
+                    setTimeout(() => {
+                      textareaRef.current?.focus();
+                      handleTextareaInput();
+                    }, 30);
+                  }}
+                  className="text-[11px] text-white/50 hover:text-white bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-primary/40 rounded-full px-3.5 py-2 transition-all max-w-full truncate"
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -1234,10 +1373,26 @@ export default function ImageStudio({
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 onInput={handleTextareaInput}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                    e.preventDefault();
+                    if (!generating) handleGenerate();
+                  }
+                }}
                 placeholder={placeholderText}
                 rows={1}
+                aria-label="Image prompt"
                 className="w-full bg-transparent border-none text-white text-sm placeholder:text-white/20 focus:outline-none resize-none pt-1 leading-relaxed min-h-[40px] max-h-[150px] md:max-h-[250px] overflow-y-auto custom-scrollbar"
               />
+              {prompt.length > 0 && (
+                <div className="flex items-center justify-end gap-2 pr-1 text-[10px] text-white/30 select-none">
+                  <span>{prompt.length} chars</span>
+                  <span className="hidden sm:inline text-white/20">·</span>
+                  <span className="hidden sm:inline">
+                    <kbd className="font-sans">⌘</kbd>/<kbd className="font-sans">Ctrl</kbd>+<kbd className="font-sans">↵</kbd> to generate
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1255,10 +1410,10 @@ export default function ImageStudio({
                   }}
                   className="flex items-center gap-2 px-3 py-2 bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.03] group whitespace-nowrap"
                 >
-                  <div className="w-4 h-4 bg-[#22d3ee] rounded flex items-center justify-center">
+                  <div className="w-4 h-4 bg-primary rounded flex items-center justify-center">
                     <span className="text-[9px] font-bold text-black uppercase">G</span>
                   </div>
-                  <span className="text-xs font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
+                  <span className="text-xs font-semibold text-white/70 group-hover:text-primary transition-colors">
                     {selectedModelName}
                   </span>
                   <svg
@@ -1303,13 +1458,14 @@ export default function ImageStudio({
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-40 text-white">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                   </svg>
-                  <span className="text-[11px] font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
+                  <span className="text-[11px] font-semibold text-white/70 group-hover:text-primary transition-colors">
                     {selectedAr}
                   </span>
                 </button>
 
                 {dropdownOpen === "ar" && (
                   <div
+                    ref={dropdownRef}
                     onClick={(e) => e.stopPropagation()}
                     className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-md p-3 max-h-[40vh] overflow-y-auto custom-scrollbar shadow-2xl border border-white/10 min-w-[160px]"
                   >
@@ -1338,13 +1494,14 @@ export default function ImageStudio({
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-40 text-white">
                       <path d="M6 2L3 6v15a2 2 0 002 2h14a2 2 0 002-2V6l-3-4H6z" />
                     </svg>
-                    <span className="text-[11px] font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
+                    <span className="text-[11px] font-semibold text-white/70 group-hover:text-primary transition-colors">
                       {selectedQuality || currentResolutions[0]}
                     </span>
                   </button>
 
                   {dropdownOpen === "quality" && (
                     <div
+                      ref={dropdownRef}
                       onClick={(e) => e.stopPropagation()}
                       className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-md p-3 max-h-[40vh] overflow-y-auto custom-scrollbar shadow-2xl border border-white/[0.05] min-w-[160px]"
                     >
@@ -1374,13 +1531,14 @@ export default function ImageStudio({
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-40 text-white">
                       <path d="M5 3l14 9-14 9V3z" />
                     </svg>
-                    <span className="text-[11px] font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors max-w-[140px] truncate">
+                    <span className="text-[11px] font-semibold text-white/70 group-hover:text-primary transition-colors max-w-[140px] truncate">
                       {selectedEffect || "Effect"}
                     </span>
                   </button>
 
                   {dropdownOpen === "effect" && (
                     <div
+                      ref={dropdownRef}
                       onClick={(e) => e.stopPropagation()}
                       className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-md p-3 max-h-[40vh] overflow-y-auto custom-scrollbar shadow-2xl border border-white/[0.05] min-w-[200px]"
                     >
@@ -1405,9 +1563,11 @@ export default function ImageStudio({
                     onClick={() => setBatchSize(num)}
                     className={`w-7 h-7 flex items-center justify-center rounded-md text-[10px] font-black transition-all ${
                       batchSize === num
-                        ? "bg-[#22d3ee] text-black shadow-lg shadow-[#22d3ee]/20"
+                        ? "bg-primary text-black shadow-lg shadow-primary/20"
                         : "text-white/40 hover:text-white/80 hover:bg-white/5"
                     }`}
+                    aria-label={`Generate ${num} image${num > 1 ? "s" : ""} per run`}
+                    aria-pressed={batchSize === num}
                   >
                     {num}
                   </button>
@@ -1420,7 +1580,8 @@ export default function ImageStudio({
               type="button"
               onClick={handleGenerate}
               disabled={generating}
-              className="bg-[#22d3ee] text-black px-4 py-2 rounded-md font-medium text-sm hover:bg-[#e5ff33] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 w-full sm:w-auto shadow-lg shadow-[#22d3ee]/10 disabled:opacity-50 disabled:cursor-not-allowed z-10"
+              aria-label="Generate image"
+              className="bg-primary text-black px-4 py-2 rounded-md font-medium text-sm hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 w-full sm:w-auto shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:brightness-100 z-10"
             >
               {generating ? (
                 <>
@@ -1441,12 +1602,16 @@ export default function ImageStudio({
 
       {/* ── FULLSCREEN IMAGE MODAL ── */}
       {fullscreenUrl && (
-        <div 
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Image preview"
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm animate-fade-in"
           onClick={() => setFullscreenUrl(null)}
         >
           <button
             type="button"
+            aria-label="Close image preview"
             className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors border border-white/10"
             onClick={(e) => {
               e.stopPropagation();
@@ -1458,14 +1623,28 @@ export default function ImageStudio({
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
-          <img 
-            src={fullscreenUrl} 
-            alt="Fullscreen Preview" 
-            className="max-w-[95vw] max-h-[95vh] rounded-2xl shadow-2xl object-contain animate-scale-up" 
+          <img
+            src={fullscreenUrl}
+            alt="Fullscreen preview"
+            className="max-w-[95vw] max-h-[95vh] rounded-2xl shadow-2xl object-contain animate-scale-up"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
       )}
+
+      {/* Non-blocking toast notifications (replaces native alert) */}
+      <Toaster
+        position="bottom-right"
+        reverseOrder={false}
+        toastOptions={{
+          style: {
+            background: "#0a0a0a",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.1)",
+            fontSize: "13px",
+          },
+        }}
+      />
     </div>
   );
 }
