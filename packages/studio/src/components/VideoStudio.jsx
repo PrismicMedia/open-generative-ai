@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import toast, { Toaster } from "react-hot-toast";
 import { generateVideo, generateI2V, processV2V, uploadFile } from "../muapi.js";
 import {
   t2vModels,
@@ -49,8 +50,10 @@ const CheckSvg = () => (
     height="16"
     viewBox="0 0 24 24"
     fill="none"
-    stroke="#22d3ee"
+    stroke="currentColor"
     strokeWidth="4"
+    className="text-primary"
+    aria-hidden="true"
   >
     <polyline points="20 6 9 17 4 12" />
   </svg>
@@ -83,7 +86,7 @@ const VideoReadySvg = () => (
   >
     <polygon points="23 7 16 12 23 17 23 7" />
     <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-    <polyline points="7 10 10 13 15 8" stroke="#22d3ee" strokeWidth="2.5" />
+    <polyline points="7 10 10 13 15 8" className="text-primary" stroke="currentColor" strokeWidth="2.5" />
   </svg>
 );
 
@@ -177,6 +180,8 @@ function ModelDropdown({ imageMode, selectedModel, onSelect, onClose }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onClick={(e) => e.stopPropagation()}
+            autoFocus
+            aria-label="Search video models"
             className="bg-transparent border-none text-xs text-white focus:ring-0 w-full p-0 outline-none"
           />
         </div>
@@ -536,7 +541,7 @@ export default function VideoStudio({
 
   const processDroppedImage = async (file) => {
     if (file.size > 10 * 1024 * 1024) {
-      alert("Image exceeds 10MB limit.");
+      toast.error("Image exceeds 10MB limit.");
       return;
     }
     setImageUploading(true);
@@ -562,7 +567,7 @@ export default function VideoStudio({
       }
       setPromptDisabled(false);
     } catch (err) {
-      alert(`Image upload failed: ${err.message}`);
+      toast.error(`Image upload failed: ${err.message}`);
     } finally {
       setImageUploading(false);
       setImageProgress(0);
@@ -571,7 +576,7 @@ export default function VideoStudio({
 
   const processDroppedVideo = async (file) => {
     if (file.size > 50 * 1024 * 1024) {
-      alert("Video exceeds 50MB limit.");
+      toast.error("Video exceeds 50MB limit.");
       return;
     }
     setVideoUploading(true);
@@ -594,7 +599,7 @@ export default function VideoStudio({
       setPrompt("");
       setPromptDisabled(true);
     } catch (err) {
-      alert(`Video upload failed: ${err.message}`);
+      toast.error(`Video upload failed: ${err.message}`);
     } finally {
       setVideoUploading(false);
       setVideoProgress(0);
@@ -614,7 +619,9 @@ export default function VideoStudio({
       }
       onFilesHandled?.();
     }
-  }, [droppedFiles, onFilesHandled, processDroppedImage, processDroppedVideo]);
+    // Only react to a new drop; handlers read fresh state via closures each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [droppedFiles]);
 
   // Initialise controls for default model on mount
   useEffect(() => {
@@ -631,9 +638,26 @@ export default function VideoStudio({
         setOpenDropdown(null);
       }
     };
+    const keyHandler = (e) => {
+      if (e.key === "Escape") setOpenDropdown(null);
+    };
     window.addEventListener("click", handler);
-    return () => window.removeEventListener("click", handler);
+    window.addEventListener("keydown", keyHandler);
+    return () => {
+      window.removeEventListener("click", handler);
+      window.removeEventListener("keydown", keyHandler);
+    };
   }, [openDropdown]);
+
+  // ── close fullscreen viewer on Escape ────────────────────────────────────
+  useEffect(() => {
+    if (!fullscreenUrl) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setFullscreenUrl(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreenUrl]);
 
   // ── textarea auto-resize ──────────────────────────────────────────────────
   const handlePromptInput = (e) => {
@@ -649,7 +673,7 @@ export default function VideoStudio({
     const file = e.target.files[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
-      alert("Image exceeds 10MB limit.");
+      toast.error("Image exceeds 10MB limit.");
       return;
     }
     setImageUploading(true);
@@ -685,7 +709,7 @@ export default function VideoStudio({
       }
     } catch (err) {
       console.error("[VideoStudio] Image upload failed:", err);
-      alert(`Image upload failed: ${err.message}`);
+      toast.error(`Image upload failed: ${err.message}`);
     } finally {
       setImageUploading(false);
       setImageProgress(0);
@@ -711,7 +735,7 @@ export default function VideoStudio({
     const file = e.target.files[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
-      alert("Image exceeds 10MB limit.");
+      toast.error("Image exceeds 10MB limit.");
       return;
     }
     setEndImageUploading(true);
@@ -722,7 +746,7 @@ export default function VideoStudio({
       });
       setUploadedEndImageUrl(url);
     } catch (err) {
-      alert(`End frame upload failed: ${err.message}`);
+      toast.error(`End frame upload failed: ${err.message}`);
     } finally {
       setEndImageUploading(false);
       setEndImageProgress(0);
@@ -737,7 +761,7 @@ export default function VideoStudio({
     const file = e.target.files[0];
     if (!file) return;
     if (file.size > 50 * 1024 * 1024) {
-      alert("Video exceeds 50MB limit.");
+      toast.error("Video exceeds 50MB limit.");
       return;
     }
     setVideoUploading(true);
@@ -768,7 +792,7 @@ export default function VideoStudio({
       }
     } catch (err) {
       console.error("[VideoStudio] Video upload failed:", err);
-      alert(`Video upload failed: ${err.message}`);
+      toast.error(`Video upload failed: ${err.message}`);
     } finally {
       setVideoUploading(false);
       setVideoProgress(0);
@@ -797,7 +821,6 @@ export default function VideoStudio({
         if (!isMC) {
           // Single-input v2v (watermark remover etc.) — drop any image
           setUploadedImageUrl(null);
-          setUploadedImagePreview(null);
         }
         setSelectedModel(m.id);
         setSelectedModelName(m.name);
@@ -845,32 +868,32 @@ export default function VideoStudio({
 
     if (v2vMode) {
       if (!uploadedVideoUrl) {
-        alert("Please upload a video first.");
+        toast.error("Please upload a video first.");
         return;
       }
       if (currentModel?.imageField && !uploadedImageUrl) {
-        alert("Please upload a reference image for motion control.");
+        toast.error("Please upload a reference image for motion control.");
         return;
       }
       if (currentModel?.promptRequired && !trimmedPrompt) {
-        alert("Please describe the motion you want.");
+        toast.error("Please describe the motion you want.");
         return;
       }
     } else if (isExtendMode) {
       if (!lastGenerationId) {
-        alert(
+        toast.error(
           "No Seedance 2.0 generation found to extend. Generate a video first.",
         );
         return;
       }
     } else if (imageMode) {
       if (!uploadedImageUrl) {
-        alert("Please upload a start frame image first.");
+        toast.error("Please upload a start frame image first.");
         return;
       }
     } else {
       if (!trimmedPrompt) {
-        alert("Please enter a prompt to generate a video.");
+        toast.error("Please enter a prompt to generate a video.");
         return;
       }
     }
@@ -1014,10 +1037,14 @@ export default function VideoStudio({
             type: "video",
           });
       }
+
+      toast.success("Video ready");
     } catch (e) {
       hadError = true;
       console.error("[VideoStudio]", e);
-      setGenerateError(e.message?.slice(0, 80) || "Generation failed");
+      const msg = e.message?.slice(0, 120) || "Generation failed";
+      setGenerateError(msg.slice(0, 80));
+      toast.error(msg);
       setTimeout(() => setGenerateError(null), 4000);
     } finally {
       setGenerating(false);
@@ -1053,7 +1080,6 @@ export default function VideoStudio({
     resetToPromptBar();
     setPrompt("");
     setUploadedImageUrl(null);
-    setUploadedImagePreview(null);
     setImageMode(false);
     setUploadedVideoUrl(null);
     setUploadedVideoName(null);
@@ -1071,7 +1097,6 @@ export default function VideoStudio({
     resetToPromptBar();
     setPrompt("");
     setUploadedImageUrl(null);
-    setUploadedImagePreview(null);
     setImageMode(false);
     setSelectedModel("seedance-v2.0-extend");
     setSelectedModelName("Seedance 2.0 Extend");
@@ -1111,8 +1136,42 @@ export default function VideoStudio({
     >
       {/* ── CENTRAL GALLERY AREA ── */}
       <div className="flex-1 w-full max-w-7xl mx-auto overflow-y-auto custom-scrollbar pb-40 lg:pb-32 px-2">
-        {history.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full pt-4 animate-fade-in-up">
+        {generating || history.length > 0 ? (
+          <div className="w-full pt-4">
+            <div className="flex items-center justify-between pb-3 px-1">
+              <span className="text-xs font-bold text-white/40 tracking-wide uppercase">
+                {history.length} {history.length === 1 ? "creation" : "creations"}
+              </span>
+              {(history.length > 0 || prompt || uploadedImageUrl || uploadedVideoUrl) && (
+                <button
+                  type="button"
+                  onClick={handleNewPrompt}
+                  aria-label="Start a new video"
+                  className="text-[11px] font-semibold text-white/50 hover:text-primary transition-colors flex items-center gap-1.5"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  New
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full animate-fade-in-up">
+            {generating && (
+              <div className="relative rounded-lg overflow-hidden border border-primary/30 bg-[#0a0a0a] shadow-xl flex flex-col">
+                <div className="w-full aspect-video bg-gradient-to-br from-white/[0.03] to-white/[0.08] animate-pulse flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <span className="animate-spin inline-block text-primary text-2xl leading-none">◌</span>
+                    <span className="text-xs font-bold text-white/60 tracking-wide">Creating your video…</span>
+                  </div>
+                </div>
+                <div className="p-3 bg-black/80 border-t border-white/5">
+                  <div className="h-2.5 w-3/4 bg-white/10 rounded animate-pulse" />
+                  <div className="h-2 w-1/2 bg-white/5 rounded animate-pulse mt-2" />
+                </div>
+              </div>
+            )}
             {history.map((entry, idx) => {
               const isSeedance2 = entry.model === "seedance-v2.0-t2v" || entry.model === "seedance-v2.0-i2v";
               return (
@@ -1120,33 +1179,49 @@ export default function VideoStudio({
                   key={entry.id || idx}
                   className="relative group rounded-lg overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-xl hover:border-primary/50 transition-all duration-300 flex flex-col"
                 >
-                  <video
-                    src={entry.url}
-                    className="w-full aspect-video object-cover bg-black/40 cursor-pointer hover:opacity-80 transition-opacity"
-                    onClick={() => setFullscreenUrl(entry.url)}
-                    controls={false}
-                    loop
-                    muted
-                    playsInline
-                    onMouseOver={(e) => e.target.play()}
-                    onMouseOut={(e) => {
-                      e.target.pause();
-                      e.target.currentTime = 0;
-                    }}
-                  />
+                  <div className="relative">
+                    <video
+                      src={entry.url}
+                      aria-label={entry.prompt ? `Generated video: ${entry.prompt}` : "Generated video"}
+                      className="w-full aspect-video object-cover bg-black/40 cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => setFullscreenUrl(entry.url)}
+                      controls={false}
+                      loop
+                      muted
+                      playsInline
+                      preload="metadata"
+                      onMouseOver={(e) => {
+                        const p = e.target.play();
+                        if (p && typeof p.catch === "function") p.catch(() => {});
+                      }}
+                      onMouseOut={(e) => {
+                        e.target.pause();
+                        e.target.currentTime = 0;
+                      }}
+                    />
+                    {/* Play affordance — fades out on hover to reveal preview */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-100 group-hover:opacity-0 transition-opacity duration-300">
+                      <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-lg">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-white/90 translate-x-0.5" aria-hidden="true">
+                          <polygon points="5 3 19 12 5 21 5 3" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
                   
                   {/* Overlay actions */}
                   <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       type="button"
                       title="Fullscreen"
+                      aria-label="View video fullscreen"
                       onClick={(e) => {
                         e.stopPropagation();
                         setFullscreenUrl(entry.url);
                       }}
                       className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
                         <polyline points="15 3 21 3 21 9" />
                         <polyline points="9 21 3 21 3 15" />
                         <line x1="21" y1="3" x2="14" y2="10" />
@@ -1156,20 +1231,44 @@ export default function VideoStudio({
                     <button
                       type="button"
                       title="Download"
+                      aria-label="Download video"
                       onClick={(e) => {
                         e.stopPropagation();
                         downloadFile(entry.url, `video-${entry.id || idx}.mp4`);
                       }}
                       className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
                         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
                       </svg>
                     </button>
+                    {entry.prompt && (
+                      <button
+                        type="button"
+                        title="Copy prompt"
+                        aria-label="Copy prompt to clipboard"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (navigator.clipboard?.writeText) {
+                            navigator.clipboard.writeText(entry.prompt).then(
+                              () => toast.success("Prompt copied"),
+                              () => toast.error("Couldn't copy prompt"),
+                            );
+                          }
+                        }}
+                        className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                          <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                        </svg>
+                      </button>
+                    )}
                     {isSeedance2 && (
                       <button
                         type="button"
                         title="Extend this video using Seedance 2.0 Extend"
+                        aria-label="Extend this video with Seedance 2.0"
                         onClick={(e) => {
                           e.stopPropagation();
                           setLastGenerationId(entry.id);
@@ -1177,7 +1276,7 @@ export default function VideoStudio({
                         }}
                         className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                           <path d="M5 12h14M12 5l7 7-7 7" />
                         </svg>
                       </button>
@@ -1191,7 +1290,7 @@ export default function VideoStudio({
                     </p>
                     <div className="flex items-center justify-between mt-1 flex-wrap gap-1">
                       <span className="text-[10px] font-bold text-primary px-2 py-0.5 bg-primary/10 rounded border border-primary/20 whitespace-nowrap">
-                        {entry.model?.replace("-", " ")}
+                        {entry.model?.replace(/-/g, " ")}
                       </span>
                       <div className="flex gap-2">
                         {entry.resolution && (
@@ -1206,6 +1305,7 @@ export default function VideoStudio({
                 </div>
               );
             })}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full animate-fade-in-up transition-all duration-700 min-h-[50vh]">
@@ -1226,8 +1326,37 @@ export default function VideoStudio({
               <span className="text-white">VIDEO STUDIO</span>
             </h1>
             <p className="text-white/40 text-sm md:text-base font-medium tracking-wide text-center max-w-lg leading-relaxed">
-              Animate images into stunning AI videos with motion effects
+              Turn a prompt, image, or clip into stunning AI video — motion, effects, and cinematic shots.
             </p>
+            {/* Example prompt chips — click to start */}
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-2 max-w-xl px-4">
+              {[
+                "Cinematic drone shot over snow-capped mountains at sunrise",
+                "Slow-motion close-up of coffee poured into a glass",
+                "Neon-lit Tokyo street in the rain, cyberpunk mood",
+                "A paper boat sailing down a rushing rain gutter",
+              ].map((ex) => (
+                <button
+                  key={ex}
+                  type="button"
+                  onClick={() => {
+                    setPrompt(ex);
+                    setTimeout(() => {
+                      const el = textareaRef.current;
+                      if (el) {
+                        el.focus();
+                        el.style.height = "auto";
+                        const maxH = window.innerWidth < 768 ? 150 : 250;
+                        el.style.height = Math.min(el.scrollHeight, maxH) + "px";
+                      }
+                    }, 30);
+                  }}
+                  className="text-[11px] text-white/50 hover:text-white bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-primary/40 rounded-full px-3.5 py-2 transition-all max-w-full truncate"
+                >
+                  {ex}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -1251,6 +1380,11 @@ export default function VideoStudio({
                   uploadedImageUrl
                     ? "Clear image"
                     : "Upload image for Image-to-Video"
+                }
+                aria-label={
+                  uploadedImageUrl
+                    ? "Clear uploaded image"
+                    : "Upload an image for image-to-video"
                 }
                 onClick={() =>
                   uploadedImageUrl
@@ -1335,6 +1469,7 @@ export default function VideoStudio({
                 <button
                   type="button"
                   title={uploadedEndImageUrl ? "Clear end frame" : "Upload end frame (optional)"}
+                  aria-label={uploadedEndImageUrl ? "Clear end frame image" : "Upload an optional end-frame image"}
                   onClick={() =>
                     uploadedEndImageUrl
                       ? clearEndImage()
@@ -1402,6 +1537,11 @@ export default function VideoStudio({
                     ? `${uploadedVideoName} — click to clear`
                     : "Upload video to remove watermark"
                 }
+                aria-label={
+                  uploadedVideoUrl
+                    ? `Clear uploaded video ${uploadedVideoName || ""}`.trim()
+                    : "Upload a video"
+                }
                 onClick={() =>
                   uploadedVideoUrl
                     ? clearVideoUpload()
@@ -1455,11 +1595,27 @@ export default function VideoStudio({
                 ref={textareaRef}
                 value={prompt}
                 onChange={handlePromptInput}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                    e.preventDefault();
+                    if (!generating) handleGenerate();
+                  }
+                }}
                 placeholder={promptPlaceholder}
                 disabled={promptDisabled}
                 rows={1}
+                aria-label="Video prompt"
                 className="w-full bg-transparent border-none text-white text-sm placeholder:text-white/10 focus:outline-none resize-none pt-1 leading-relaxed min-h-[40px] max-h-[150px] md:max-h-[250px] overflow-y-auto custom-scrollbar disabled:opacity-40"
               />
+              {prompt.length > 0 && !promptDisabled && (
+                <div className="flex items-center justify-end gap-2 pr-1 text-[10px] text-white/30 select-none">
+                  <span>{prompt.length} chars</span>
+                  <span className="hidden sm:inline text-white/20">·</span>
+                  <span className="hidden sm:inline">
+                    <kbd className="font-sans">⌘</kbd>/<kbd className="font-sans">Ctrl</kbd>+<kbd className="font-sans">↵</kbd> to generate
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1490,12 +1646,12 @@ export default function VideoStudio({
                   onClick={toggleDropdown("model")}
                   className="flex items-center gap-2 px-3 py-2 bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.03] group whitespace-nowrap"
                 >
-                  <div className="w-4 h-4 bg-[#22d3ee] rounded flex items-center justify-center shadow-lg shadow-[#22d3ee]/10">
+                  <div className="w-4 h-4 bg-primary rounded flex items-center justify-center shadow-lg shadow-primary/10">
                     <span className="text-[9px] font-bold text-black uppercase">
                       V
                     </span>
                   </div>
-                  <span className="text-xs font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
+                  <span className="text-xs font-semibold text-white/70 group-hover:text-primary transition-colors">
                     {selectedModelName}
                   </span>
                   <svg
@@ -1552,7 +1708,7 @@ export default function VideoStudio({
                         ry="2"
                       />
                     </svg>
-                    <span className="text-[11px] font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
+                    <span className="text-[11px] font-semibold text-white/70 group-hover:text-primary transition-colors">
                       {selectedAr}
                     </span>
                   </button>
@@ -1562,7 +1718,7 @@ export default function VideoStudio({
                       onClick={(e) => e.stopPropagation()}
                       className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-lg p-3 shadow-2xl border border-white/[0.05] max-h-80 overflow-y-auto custom-scrollbar min-w-[160px]"
                     >
-                      <div className="text-xs font-bold text-white/20 border-b border-white/[0.03] mb-2">
+                      <div className="text-xs font-bold text-white/50 uppercase tracking-wide border-b border-white/[0.03] mb-2 pb-1.5">
                         Aspect Ratio
                       </div>
                       <div className="flex flex-col gap-1">
@@ -1607,7 +1763,7 @@ export default function VideoStudio({
                     >
                       <path d="M5 3l14 9-14 9V3z" />
                     </svg>
-                    <span className="text-[11px] font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors max-w-[140px] truncate">
+                    <span className="text-[11px] font-semibold text-white/70 group-hover:text-primary transition-colors max-w-[140px] truncate">
                       {selectedEffect || "Effect"}
                     </span>
                   </button>
@@ -1617,7 +1773,7 @@ export default function VideoStudio({
                       onClick={(e) => e.stopPropagation()}
                       className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-lg p-3 shadow-2xl border border-white/[0.05] max-h-80 overflow-y-auto custom-scrollbar min-w-[200px]"
                     >
-                      <div className="text-xs font-bold text-white/20 border-b border-white/[0.03] mb-2">
+                      <div className="text-xs font-bold text-white/50 uppercase tracking-wide border-b border-white/[0.03] mb-2 pb-1.5">
                         Effect Type
                       </div>
                       <div className="flex flex-col gap-1">
@@ -1663,7 +1819,7 @@ export default function VideoStudio({
                       <circle cx="12" cy="12" r="10" />
                       <polyline points="12 6 12 12 16 14" />
                     </svg>
-                    <span className="text-xs font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
+                    <span className="text-xs font-semibold text-white/70 group-hover:text-primary transition-colors">
                       {selectedDuration}s
                     </span>
                   </button>
@@ -1673,7 +1829,7 @@ export default function VideoStudio({
                       onClick={(e) => e.stopPropagation()}
                       className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-md p-3 shadow-2xl border border-white/10 min-w-[140px]"
                     >
-                      <div className="text-xs font-bold text-white/20 border-b border-white/[0.03] mb-2">
+                      <div className="text-xs font-bold text-white/50 uppercase tracking-wide border-b border-white/[0.03] mb-2 pb-1.5">
                         Duration
                       </div>
                       <div className="flex flex-col gap-1">
@@ -1718,7 +1874,7 @@ export default function VideoStudio({
                     >
                       <path d="M6 2L3 6v15a2 2 0 002 2h14a2 2 0 002-2V6l-3-4H6z" />
                     </svg>
-                    <span className="text-[11px] font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
+                    <span className="text-[11px] font-semibold text-white/70 group-hover:text-primary transition-colors">
                       {selectedResolution || "720p"}
                     </span>
                   </button>
@@ -1728,7 +1884,7 @@ export default function VideoStudio({
                       onClick={(e) => e.stopPropagation()}
                       className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-md p-3 shadow-2xl border border-white/[0.05] min-w-[140px]"
                     >
-                      <div className="text-xs font-bold text-white/20 border-b border-white/[0.03] mb-2">
+                      <div className="text-xs font-bold text-white/50 uppercase tracking-wide border-b border-white/[0.03] mb-2 pb-1.5">
                         Resolution
                       </div>
                       <div className="flex flex-col gap-1">
@@ -1760,7 +1916,8 @@ export default function VideoStudio({
               type="button"
               onClick={handleGenerate}
               disabled={generating}
-              className="bg-[#22d3ee] text-black px-4 py-2 rounded-md font-medium text-sm hover:bg-[#e5ff33] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 w-full sm:w-auto shadow-lg shadow-[#22d3ee]/10 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Generate video"
+              className="bg-primary text-black px-4 py-2 rounded-md font-medium text-sm hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 w-full sm:w-auto shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:brightness-100"
             >
               {generating ? (
                 <>
@@ -1783,12 +1940,16 @@ export default function VideoStudio({
 
       {/* ── FULLSCREEN VIDEO MODAL ── */}
       {fullscreenUrl && (
-        <div 
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Video preview"
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm animate-fade-in"
           onClick={() => setFullscreenUrl(null)}
         >
           <button
             type="button"
+            aria-label="Close video preview"
             className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors border border-white/10"
             onClick={(e) => {
               e.stopPropagation();
@@ -1800,16 +1961,30 @@ export default function VideoStudio({
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
-          <video 
-            src={fullscreenUrl} 
-            controls 
-            autoPlay 
-            loop 
-            className="max-w-[95vw] max-h-[95vh] rounded-2xl shadow-2xl object-contain animate-scale-up" 
+          <video
+            src={fullscreenUrl}
+            controls
+            autoPlay
+            loop
+            className="max-w-[95vw] max-h-[95vh] rounded-2xl shadow-2xl object-contain animate-scale-up"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
       )}
+
+      {/* Non-blocking toast notifications (replaces native alert) */}
+      <Toaster
+        position="bottom-right"
+        reverseOrder={false}
+        toastOptions={{
+          style: {
+            background: "#0a0a0a",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.1)",
+            fontSize: "13px",
+          },
+        }}
+      />
     </div>
   );
 }
