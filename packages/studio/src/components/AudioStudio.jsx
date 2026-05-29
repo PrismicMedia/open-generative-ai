@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import toast, { Toaster } from "react-hot-toast";
 import { generateAudio, uploadFile } from "../muapi.js";
 import { audioModels, getAudioModelById } from "../models.js";
 
@@ -44,7 +45,7 @@ const VolumeMuteIcon = () => (
   </svg>
 );
 
-const MusicIcon = ({ className = "text-[#22d3ee]" }) => (
+const MusicIcon = ({ className = "text-primary" }) => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M9 18V5l12-2v13" />
     <circle cx="6" cy="18" r="3" />
@@ -86,7 +87,7 @@ function AudioFileUploader({ label, value, onChange, apiKey }) {
     if (!file) return;
 
     if (file.size > 20 * 1024 * 1024) {
-      alert("Audio file exceeds 20MB limit.");
+      toast.error("Audio file exceeds 20MB limit.");
       return;
     }
 
@@ -102,7 +103,7 @@ function AudioFileUploader({ label, value, onChange, apiKey }) {
       onChange(url);
     } catch (err) {
       setUploadState(UPLOAD_STATE.IDLE);
-      alert(`Upload failed: ${err.message}`);
+      toast.error(`Upload failed: ${err.message}`);
     } finally {
       setProgress(0);
     }
@@ -130,12 +131,21 @@ function AudioFileUploader({ label, value, onChange, apiKey }) {
         )}
       </div>
 
-      <div 
+      <div
+        role="button"
+        tabIndex={uploadState === UPLOAD_STATE.IDLE ? 0 : -1}
+        aria-label={`Upload ${label}`}
         onClick={() => uploadState === UPLOAD_STATE.IDLE && fileInputRef.current?.click()}
+        onKeyDown={(e) => {
+          if ((e.key === "Enter" || e.key === " ") && uploadState === UPLOAD_STATE.IDLE) {
+            e.preventDefault();
+            fileInputRef.current?.click();
+          }
+        }}
         className={`relative border rounded p-4 transition-all duration-300 flex items-center gap-3.5 cursor-pointer ${
           uploadState === UPLOAD_STATE.READY 
             ? "border-primary/60 bg-primary/10 shadow-[0_0_15px_rgba(34,211,238,0.05)]" 
-            : "border-zinc-700 bg-zinc-900 hover:bg-zinc-850 hover:border-primary/50"
+            : "border-zinc-700 bg-zinc-900 hover:bg-zinc-800 hover:border-primary/50"
         }`}
       >
         <input 
@@ -401,7 +411,27 @@ function PremiumAudioPlayer({ url, title }) {
           <div
             ref={progressBarRef}
             onClick={handleScrub}
-            className="flex-1 h-2 bg-zinc-700 hover:bg-zinc-650 rounded-full cursor-pointer relative group transition-colors"
+            role="slider"
+            aria-label="Seek"
+            aria-valuemin={0}
+            aria-valuemax={Math.floor(duration) || 0}
+            aria-valuenow={Math.floor(currentTime)}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (!audioRef.current || !duration) return;
+              if (e.key === "ArrowRight") {
+                e.preventDefault();
+                const t = Math.min(currentTime + 5, duration);
+                audioRef.current.currentTime = t;
+                setCurrentTime(t);
+              } else if (e.key === "ArrowLeft") {
+                e.preventDefault();
+                const t = Math.max(currentTime - 5, 0);
+                audioRef.current.currentTime = t;
+                setCurrentTime(t);
+              }
+            }}
+            className="flex-1 h-2 bg-zinc-700 hover:bg-zinc-600 rounded-full cursor-pointer relative group transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             <div 
               className="absolute left-0 top-0 bottom-0 bg-primary rounded-full group-hover:bg-primary/95 transition-all"
@@ -426,6 +456,7 @@ function PremiumAudioPlayer({ url, title }) {
               onClick={toggleMute}
               className="p-2 bg-zinc-800/80 border border-zinc-700 hover:bg-zinc-700 rounded text-zinc-200 hover:text-white transition-all"
               title="Mute/Unmute"
+              aria-label={isMuted ? "Unmute" : "Mute"}
               type="button"
             >
               {isMuted ? <VolumeMuteIcon /> : <VolumeIcon />}
@@ -437,6 +468,7 @@ function PremiumAudioPlayer({ url, title }) {
               step="0.05"
               value={isMuted ? 0 : volume}
               onChange={handleVolumeChange}
+              aria-label="Volume"
               className="w-16 h-1 bg-zinc-700 rounded appearance-none cursor-pointer accent-primary hover:bg-zinc-600 transition-all opacity-0 group-hover/volume:opacity-100"
             />
           </div>
@@ -446,6 +478,7 @@ function PremiumAudioPlayer({ url, title }) {
             onClick={togglePlay}
             className="w-12 h-12 bg-primary hover:bg-white text-black rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-glow"
             title={isPlaying ? "Pause" : "Play"}
+            aria-label={isPlaying ? "Pause" : "Play"}
             type="button"
           >
             {isPlaying ? <PauseIcon /> : <PlayIcon />}
@@ -456,6 +489,7 @@ function PremiumAudioPlayer({ url, title }) {
             onClick={downloadAudio}
             className="px-4 py-2 bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700 rounded text-xs font-bold text-white flex items-center gap-2 hover:border-primary/45 transition-all"
             title="Download Audio"
+            aria-label="Download audio"
             type="button"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -486,6 +520,7 @@ export default function AudioStudio({
   const [params, setParams] = useState({});
   const [openDropdown, setOpenDropdown] = useState(false);
   const modelBtnRef = useRef(null);
+  const modelMenuRef = useRef(null);
 
   // ── Generation state ──────────────────────────────────────────────────
   const [isGenerating, setIsGenerating] = useState(false);
@@ -574,7 +609,7 @@ export default function AudioStudio({
             .then(url => {
               setParams(prev => ({ ...prev, [key]: url }));
             })
-            .catch(err => alert(`Failed to upload dropped file: ${err.message}`));
+            .catch(err => toast.error(`Failed to upload dropped file: ${err.message}`));
         } else if (firstAudioListField) {
           const [key] = firstAudioListField;
           uploadFile(apiKey, audioFiles[0], () => {})
@@ -585,12 +620,36 @@ export default function AudioStudio({
                 return { ...prev, [key]: currentList };
               });
             })
-            .catch(err => alert(`Failed to upload dropped file: ${err.message}`));
+            .catch(err => toast.error(`Failed to upload dropped file: ${err.message}`));
         }
       }
       onFilesHandled?.();
     }
   }, [droppedFiles, onFilesHandled, selectedModel, apiKey]);
+
+  // ── Close model dropdown on outside click / Escape ───────────────────────
+  useEffect(() => {
+    if (!openDropdown) return;
+    const onClick = (e) => {
+      if (
+        modelMenuRef.current &&
+        !modelMenuRef.current.contains(e.target) &&
+        modelBtnRef.current &&
+        !modelBtnRef.current.contains(e.target)
+      ) {
+        setOpenDropdown(false);
+      }
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpenDropdown(false);
+    };
+    window.addEventListener("mousedown", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [openDropdown]);
 
   // ── History helpers ─────────────────────────────────────────────────────
   const addToInternalHistory = useCallback((entry) => {
@@ -611,7 +670,7 @@ export default function AudioStudio({
     if (selectedModel.required) {
       for (const field of selectedModel.required) {
         if (!params[field] || (Array.isArray(params[field]) && params[field].length === 0)) {
-          alert(`Please complete the required field: ${selectedModel.inputs?.[field]?.title || field}`);
+          toast.error(`Please complete the required field: ${selectedModel.inputs?.[field]?.title || field}`);
           return;
         }
       }
@@ -649,6 +708,7 @@ export default function AudioStudio({
       setActiveResultTitle(title);
       setView("result");
       setActiveHistoryIdx(0);
+      toast.success("Track ready");
 
       if (onGenerationComplete) {
         onGenerationComplete({
@@ -660,7 +720,9 @@ export default function AudioStudio({
       }
     } catch (e) {
       console.error("[AudioStudio]", e);
-      setGenerateError(e.message?.slice(0, 100) ?? "Audio generation failed");
+      const msg = e.message?.slice(0, 100) ?? "Audio generation failed";
+      setGenerateError(msg);
+      toast.error(msg);
     } finally {
       setIsGenerating(false);
     }
@@ -688,8 +750,11 @@ export default function AudioStudio({
             <button
               ref={modelBtnRef}
               type="button"
+              aria-haspopup="listbox"
+              aria-expanded={openDropdown}
+              aria-label="Select audio model"
               onClick={() => setOpenDropdown(!openDropdown)}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded px-4 py-3.5 text-sm text-left font-bold text-white flex items-center justify-between hover:bg-zinc-850 hover:border-primary/50 transition-all"
+              className="w-full bg-zinc-900 border border-zinc-700 rounded px-4 py-3.5 text-sm text-left font-bold text-white flex items-center justify-between hover:bg-zinc-800 hover:border-primary/50 transition-all"
             >
               <span>{selectedModel?.name ?? "Select Model"}</span>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`transition-transform duration-200 ${openDropdown ? 'rotate-180' : ''}`}>
@@ -698,7 +763,7 @@ export default function AudioStudio({
             </button>
 
             {openDropdown && (
-              <div className="absolute left-0 right-0 mt-2 z-50 bg-[#161618] border border-zinc-700 rounded shadow-3xl max-h-60 overflow-y-auto custom-scrollbar p-1.5">
+              <div ref={modelMenuRef} role="listbox" className="absolute left-0 right-0 mt-2 z-50 bg-[#161618] border border-zinc-700 rounded shadow-3xl max-h-60 overflow-y-auto custom-scrollbar p-1.5">
                 {audioModels.map((model) => (
                   <button
                     key={model.id}
@@ -777,6 +842,9 @@ export default function AudioStudio({
                     </div>
                     <button
                       type="button"
+                      role="switch"
+                      aria-checked={!!params[key]}
+                      aria-label={schema.title || key}
                       onClick={() => setParams(prev => ({ ...prev, [key]: !prev[key] }))}
                       className={`w-11 h-6 rounded-full p-1 transition-all duration-300 relative shrink-0 ${
                         params[key] ? "bg-primary" : "bg-zinc-800"
@@ -859,9 +927,23 @@ export default function AudioStudio({
                     <textarea
                       value={params[key] || ""}
                       onChange={(e) => setParams(prev => ({ ...prev, [key]: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                          e.preventDefault();
+                          if (!isGenerating) handleGenerate();
+                        }
+                      }}
+                      aria-label={schema.title || "Lyrics or prompt"}
                       className="w-full bg-zinc-900 border border-zinc-700 focus:border-primary/85 rounded p-3 text-xs text-white placeholder:text-zinc-400 focus:outline-none transition-all min-h-[100px] resize-none leading-relaxed shadow-inner"
                       placeholder={schema.description || "Enter what you want generated..."}
                     />
+                    {(params[key]?.length || 0) > 0 && (
+                      <div className="flex items-center justify-end gap-2 text-[10px] text-zinc-500 select-none">
+                        <span>{params[key].length} chars</span>
+                        <span className="hidden sm:inline text-zinc-600">·</span>
+                        <span className="hidden sm:inline"><kbd className="font-sans">⌘</kbd>/<kbd className="font-sans">Ctrl</kbd>+<kbd className="font-sans">↵</kbd> to generate</span>
+                      </div>
+                    )}
                     {schema.examples && Array.isArray(schema.examples) && (
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         {schema.examples.map((ex, idx) => (
@@ -986,7 +1068,7 @@ export default function AudioStudio({
               <div className="flex flex-col items-center gap-6 max-w-md text-center p-8 bg-zinc-900/40 border border-zinc-800 rounded backdrop-blur-sm relative group animate-fade-in-up">
                 {/* Glow behind the icon */}
                 <div className="absolute inset-0 bg-primary/5 blur-3xl rounded-full opacity-25 group-hover:opacity-40 transition-opacity duration-1000 pointer-events-none" />
-                <div className="w-20 h-20 bg-zinc-900 border border-zinc-705 rounded flex items-center justify-center shadow-inner relative z-10 transition-transform duration-500 group-hover:scale-105">
+                <div className="w-20 h-20 bg-zinc-900 border border-zinc-700 rounded flex items-center justify-center shadow-inner relative z-10 transition-transform duration-500 group-hover:scale-105">
                   <MusicIcon className="text-primary w-8 h-8 filter drop-shadow-[0_0_8px_rgba(34,211,238,0.3)]" />
                 </div>
                 <div className="relative z-10">
@@ -1004,7 +1086,7 @@ export default function AudioStudio({
                 <div className="flex items-center justify-between px-1">
                   <button
                     onClick={handleNew}
-                    className="text-xs font-bold text-zinc-200 hover:text-primary flex items-center gap-2 transition-all bg-zinc-905 border border-zinc-700 hover:border-primary/30 px-4 py-2 rounded-full"
+                    className="text-xs font-bold text-zinc-200 hover:text-primary flex items-center gap-2 transition-all bg-zinc-900 border border-zinc-700 hover:border-primary/30 px-4 py-2 rounded-full"
                     type="button"
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -1033,8 +1115,17 @@ export default function AudioStudio({
                 {history.map((entry, idx) => (
                   <div
                     key={entry.id || idx}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Load ${entry.title || entry.prompt || "audio track"}`}
                     onClick={() => handleSelectHistory(entry, idx)}
-                    className={`p-3.5 bg-zinc-900 border rounded cursor-pointer transition-all flex flex-col justify-between h-28 border-zinc-700/80 hover:bg-zinc-850 hover:border-zinc-500 ${
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleSelectHistory(entry, idx);
+                      }
+                    }}
+                    className={`p-3.5 bg-zinc-900 border rounded cursor-pointer transition-all flex flex-col justify-between h-28 border-zinc-700/80 hover:bg-zinc-800 hover:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-primary/50 ${
                       activeResultUrl === entry.url && view === "result"
                         ? "border-primary bg-primary/5 shadow-glow"
                         : ""
@@ -1064,6 +1155,20 @@ export default function AudioStudio({
         </div>
 
       </div>
+
+      {/* Non-blocking toast notifications (replaces native alert) */}
+      <Toaster
+        position="bottom-right"
+        reverseOrder={false}
+        toastOptions={{
+          style: {
+            background: "#0a0a0a",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.1)",
+            fontSize: "13px",
+          },
+        }}
+      />
     </div>
   );
 }
