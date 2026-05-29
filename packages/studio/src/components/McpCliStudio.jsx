@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { FaGithub, FaTerminal, FaPlug, FaStar, FaExternalLinkAlt } from 'react-icons/fa';
+import { FaGithub, FaTerminal, FaPlug, FaStar, FaExternalLinkAlt, FaRegCopy, FaCheck } from 'react-icons/fa';
 
 const FEATURES = [
   {
@@ -52,12 +52,36 @@ const EXAMPLES = [
 ];
 
 function CodeBlock({ children, className = '' }) {
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopy = async () => {
+    const text = typeof children === 'string' ? children : String(children ?? '');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable — silently ignore */
+    }
+  };
+
   return (
-    <pre
-      className={`text-[11.5px] font-mono text-[#22d3ee] bg-black/50 border border-white/5 rounded-md px-3 py-2 overflow-x-auto whitespace-pre ${className}`}
-    >
-      {children}
-    </pre>
+    <div className="relative group/code">
+      <pre
+        className={`text-[11.5px] font-mono text-primary bg-black/50 border border-white/5 rounded-md px-3 py-2 pr-9 overflow-x-auto whitespace-pre ${className}`}
+      >
+        {children}
+      </pre>
+      <button
+        type="button"
+        onClick={handleCopy}
+        aria-label={copied ? 'Copied' : 'Copy command'}
+        title={copied ? 'Copied' : 'Copy command'}
+        className="absolute top-1.5 right-1.5 p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/10 opacity-0 group-hover/code:opacity-100 focus:opacity-100 transition-opacity"
+      >
+        {copied ? <FaCheck className="text-[11px] text-primary" /> : <FaRegCopy className="text-[11px]" />}
+      </button>
+    </div>
   );
 }
 
