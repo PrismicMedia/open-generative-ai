@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import toast, { Toaster } from "react-hot-toast";
 import { uploadFile, generateMarketingStudioAd } from "../muapi.js";
 
 const SCROLLBAR_STYLE = `
@@ -22,7 +23,7 @@ const SCROLLBAR_STYLE = `
 // ── Icons ────────────────────────────────────────────────────────────────────
 
 const CheckSvg = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="4">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" className="text-primary" aria-hidden="true">
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
@@ -100,10 +101,14 @@ function UploadSlot({ icon, url, progress, label, onUpload, onClear, multiple = 
   
   return (
     <div className="relative group/slot flex items-center">
-      <div 
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={`Upload ${label}`}
         onClick={() => inputRef.current?.click()}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); inputRef.current?.click(); } }}
         title={`Upload ${label}`}
-        className={`relative w-10 h-10 rounded-full border transition-all flex items-center justify-center cursor-pointer ${
+        className={`relative w-10 h-10 rounded-full border transition-all flex items-center justify-center cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50 ${
           url ? 'border-primary/40 bg-primary/5' : 'border-white/5 bg-white/5 hover:bg-white/10 hover:border-white/20'
         }`}
       >
@@ -132,7 +137,9 @@ function UploadSlot({ icon, url, progress, label, onUpload, onClear, multiple = 
 
         {/* Clear Button (Single) */}
         {url && !multiple && (
-          <button 
+          <button
+            type="button"
+            aria-label={`Clear ${label}`}
             onClick={(e) => { e.stopPropagation(); onClear(); }}
             className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/slot:opacity-100 transition-opacity shadow-lg"
           >
@@ -280,6 +287,17 @@ export default function MarketingStudio({ apiKey, droppedFiles, onFilesHandled }
     return () => clearTimeout(timer);
   }, [prompt, params, productImage, avatarImage, additionalImages, history]);
 
+  // Escape closes any open dropdown / the fullscreen viewer
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      setDropdown(null);
+      setFullscreenUrl(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const downloadFile = async (url, filename) => {
@@ -310,7 +328,7 @@ export default function MarketingStudio({ apiKey, droppedFiles, onFilesHandled }
         try {
           const url = await uploadFile(apiKey, file, (pct) => setUploadProgress(p => ({ ...p, additional: pct })));
           setAdditionalImages(prev => [...prev, url].slice(0, 6));
-        } catch (err) { alert(err.message); }
+        } catch (err) { toast.error(err.message); }
       }
     } else {
       const file = files[0];
@@ -318,14 +336,14 @@ export default function MarketingStudio({ apiKey, droppedFiles, onFilesHandled }
         const url = await uploadFile(apiKey, file, (pct) => setUploadProgress(p => ({ ...p, [target]: pct })));
         if (target === 'product') setProductImage(url);
         else setAvatarImage(url);
-      } catch (err) { alert(err.message); }
+      } catch (err) { toast.error(err.message); }
     }
     setUploadProgress(p => ({ ...p, [target]: 0 }));
   };
 
   const handleGenerate = async () => {
-    if (!prompt.trim()) return alert("Please enter an ad script.");
-    if (!productImage) return alert("Please upload a product image.");
+    if (!prompt.trim()) { toast.error("Please enter an ad script."); return; }
+    if (!productImage) { toast.error("Please upload a product image."); return; }
 
     setIsGenerating(true);
     try {
@@ -348,9 +366,10 @@ export default function MarketingStudio({ apiKey, droppedFiles, onFilesHandled }
         };
         setHistory(prev => [entry, ...prev]);
         setFullscreenUrl(result.url);
+        toast.success("Ad ready");
       }
     } catch (err) {
-      alert("Generation failed: " + err.message);
+      toast.error("Generation failed: " + err.message);
     } finally {
       setIsGenerating(false);
     }
@@ -374,19 +393,24 @@ export default function MarketingStudio({ apiKey, droppedFiles, onFilesHandled }
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in-up">
             {history.map(entry => (
               <div key={entry.id} className="relative group rounded-lg overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-xl hover:border-primary/50 transition-all duration-300 flex flex-col">
-                <video 
-                  src={entry.url} 
-                  className="w-full aspect-video object-cover cursor-pointer hover:opacity-80 transition-opacity" 
+                <video
+                  src={entry.url}
+                  aria-label={entry.prompt ? `Ad: ${entry.prompt.slice(0, 60)}` : "Generated ad"}
+                  className="w-full aspect-video object-cover cursor-pointer hover:opacity-80 transition-opacity"
                   onClick={() => setFullscreenUrl(entry.url)}
-                  muted loop onMouseOver={e => e.target.play()} onMouseOut={e => { e.target.pause(); e.target.currentTime = 0; }}
+                  muted loop preload="metadata" playsInline
+                  onMouseOver={e => { const p = e.target.play(); if (p && typeof p.catch === "function") p.catch(() => {}); }}
+                  onMouseOut={e => { e.target.pause(); e.target.currentTime = 0; }}
                 />
                 
                 {/* Actions Overlay */}
                 <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                    <button
+                    type="button"
                     onClick={(e) => { e.stopPropagation(); downloadFile(entry.url, `marketing-ad-${entry.id}.mp4`); }}
                     className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
                     title="Download"
+                    aria-label="Download ad"
                    >
                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
@@ -412,7 +436,7 @@ export default function MarketingStudio({ apiKey, droppedFiles, onFilesHandled }
                 <div className="absolute inset-0 bg-primary/10 blur-[120px] rounded-full opacity-30 group-hover:opacity-60 transition-opacity duration-1000" />
                 <div className="relative w-24 h-24 md:w-32 md:h-32 bg-white/[0.02] rounded-[2rem] flex items-center justify-center border border-white/[0.05] overflow-hidden backdrop-blur-sm">
                   <div className="w-16 h-16 bg-primary/5 rounded-2xl flex items-center justify-center border border-primary/10 relative z-10 transition-transform duration-500 group-hover:scale-110 shadow-inner">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="1.5">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary">
                       <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
                       <line x1="8" y1="21" x2="16" y2="21" />
                       <line x1="12" y1="17" x2="12" y2="21" />
@@ -440,7 +464,9 @@ export default function MarketingStudio({ apiKey, droppedFiles, onFilesHandled }
               {additionalImages.map((img, idx) => (
                 <div key={idx} className="relative group/img flex-shrink-0">
                   <img src={img} className="w-9 h-9 rounded-full object-cover border border-white/10" />
-                  <button 
+                  <button
+                    type="button"
+                    aria-label="Remove reference image"
                     onClick={() => setAdditionalImages(prev => prev.filter((_, i) => i !== idx))}
                     className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-black/80 text-white rounded-full flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity border border-white/10"
                   >
@@ -457,10 +483,20 @@ export default function MarketingStudio({ apiKey, droppedFiles, onFilesHandled }
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onInput={handleTextareaInput}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  if (!isGenerating) handleGenerate();
+                }
+              }}
+              aria-label="Ad script prompt"
               placeholder="Describe your ad script... Use @image1 for product, @image2 for avatar."
               rows={1}
               className="w-full bg-transparent border-none text-white text-sm placeholder:text-white/20 focus:outline-none resize-none pt-1 leading-relaxed min-h-[44px] max-h-[300px] custom-scrollbar font-medium"
             />
+            {prompt.length > 0 && (
+              <span className="absolute -bottom-0.5 right-1 text-[10px] text-white/25 select-none pointer-events-none">{prompt.length}</span>
+            )}
           </div>
 
           {/* Bottom Row: Uploads + Controls + Generate */}
@@ -572,9 +608,11 @@ export default function MarketingStudio({ apiKey, droppedFiles, onFilesHandled }
             </div>
 
             <button
+              type="button"
+              aria-label="Generate ad"
               onClick={handleGenerate}
               disabled={isGenerating}
-              className="bg-primary text-black px-8 py-2.5 rounded font-bold text-base hover:bg-[#e5ff33] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 shadow-glow disabled:opacity-50 disabled:grayscale z-10"
+              className="bg-primary text-black px-8 py-2.5 rounded font-bold text-base hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3 shadow-glow disabled:opacity-50 disabled:grayscale disabled:hover:scale-100 disabled:hover:brightness-100 z-10"
             >
               {isGenerating ? (
                 <>
@@ -591,11 +629,25 @@ export default function MarketingStudio({ apiKey, droppedFiles, onFilesHandled }
 
       {/* Fullscreen Preview */}
       {fullscreenUrl && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm animate-fade-in" onClick={() => setFullscreenUrl(null)}>
-          <button className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white border border-white/10 transition-colors shadow-2xl"><CloseSvg /></button>
+        <div role="dialog" aria-modal="true" aria-label="Ad preview" className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm animate-fade-in" onClick={() => setFullscreenUrl(null)}>
+          <button type="button" aria-label="Close preview" onClick={(e) => { e.stopPropagation(); setFullscreenUrl(null); }} className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white border border-white/10 transition-colors shadow-2xl"><CloseSvg /></button>
           <video src={fullscreenUrl} controls autoPlay className="max-w-[95vw] max-h-[95vh] rounded-lg shadow-4xl animate-scale-up" onClick={e => e.stopPropagation()} />
         </div>
       )}
+
+      {/* Non-blocking toast notifications (replaces native alert) */}
+      <Toaster
+        position="bottom-right"
+        reverseOrder={false}
+        toastOptions={{
+          style: {
+            background: "#0a0a0a",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.1)",
+            fontSize: "13px",
+          },
+        }}
+      />
     </div>
   );
 }
