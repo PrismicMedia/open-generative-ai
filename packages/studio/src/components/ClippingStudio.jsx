@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import toast, { Toaster } from "react-hot-toast";
 import { runClipping, uploadFile } from "../muapi.js";
 
 // ---------------------------------------------------------------------------
 // Inline SVG Icons
 // ---------------------------------------------------------------------------
-const ScissorsIcon = ({ className = "text-[#22d3ee]" }) => (
+const ScissorsIcon = ({ className = "text-primary" }) => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <circle cx="6" cy="6" r="3" />
     <circle cx="6" cy="18" r="3" />
@@ -51,7 +52,7 @@ const ClockIcon = () => (
 );
 
 const CheckIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="3">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-primary" aria-hidden="true">
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
@@ -147,8 +148,19 @@ export default function ClippingStudio({
         setHighlightsDropdownOpen(false);
       }
     }
+    function handleKey(event) {
+      if (event.key === "Escape") {
+        setAspectDropdownOpen(false);
+        setHighlightsDropdownOpen(false);
+        setFullscreenUrl(null);
+      }
+    }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKey);
+    };
   }, []);
 
   // Timer effect for generation progress
@@ -222,7 +234,7 @@ export default function ClippingStudio({
           })
           .catch(err => {
             setVideoUploading(false);
-            alert(`Failed to upload dropped file: ${err.message}`);
+            toast.error(`Failed to upload dropped file: ${err.message}`);
           });
       }
       onFilesHandled?.();
@@ -260,8 +272,12 @@ export default function ClippingStudio({
 
   // ── Copy Link & Download Helpers ─────────────────────────────────────────
   const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    alert("URL copied to clipboard!");
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(
+        () => toast.success("URL copied to clipboard"),
+        () => toast.error("Couldn't copy URL"),
+      );
+    }
   };
 
   const downloadVideo = async (url, title = "clipped_video") => {
@@ -294,7 +310,7 @@ export default function ClippingStudio({
     const file = e.target.files[0];
     if (!file) return;
     if (file.size > 100 * 1024 * 1024) {
-      alert("Video exceeds 100MB limit.");
+      toast.error("Video exceeds 100MB limit.");
       return;
     }
     setVideoUploading(true);
@@ -306,7 +322,7 @@ export default function ClippingStudio({
       setVideoUrl(url);
     } catch (err) {
       console.error("[ClippingStudio] Video upload failed:", err);
-      alert(`Video upload failed: ${err.message}`);
+      toast.error(`Video upload failed: ${err.message}`);
     } finally {
       setVideoUploading(false);
       setVideoProgress(0);
@@ -321,7 +337,7 @@ export default function ClippingStudio({
   // ── Dispatch Run / Call submitAndPoll ────────────────────────────────────
   const handleGenerate = async () => {
     if (!videoUrl) {
-      alert("Please upload a video or paste a video URL first.");
+      toast.error("Please upload a video or paste a video URL first.");
       return;
     }
 
@@ -367,6 +383,7 @@ export default function ClippingStudio({
 
       setResult(newResult);
       setActiveHighlightIndex(0);
+      toast.success(returnCoordinatesOnly ? "Highlights ready" : `${clips.length || 0} clips ready`);
 
       // Append to history
       setHistory((prev) => [newResult, ...prev].slice(0, 30));
@@ -380,7 +397,9 @@ export default function ClippingStudio({
       }
     } catch (err) {
       console.error("[ClippingStudio] Error generating clips:", err);
-      setGenerateError(err.message || "Failed to process AI clipping.");
+      const msg = err.message || "Failed to process AI clipping.";
+      setGenerateError(msg);
+      toast.error(msg);
     } finally {
       setIsGenerating(false);
     }
@@ -458,7 +477,7 @@ export default function ClippingStudio({
                       loop
                       playsInline
                       onClick={() => handleSelectHistory(entry)}
-                      onMouseOver={(e) => e.target.play()}
+                      onMouseOver={(e) => { const p = e.target.play(); if (p && typeof p.catch === "function") p.catch(() => {}); }}
                       onMouseOut={(e) => {
                         e.target.pause();
                         e.target.currentTime = 0;
@@ -470,6 +489,7 @@ export default function ClippingStudio({
                       <button
                         type="button"
                         title="Delete from history"
+                        aria-label="Delete this run from history"
                         onClick={(e) => {
                           e.stopPropagation();
                           setHistory((prev) => prev.filter((h) => h.id !== entry.id));
@@ -595,7 +615,7 @@ export default function ClippingStudio({
                             <div className="flex items-center gap-2 text-[10px] text-zinc-400 font-semibold">
                               <ClockIcon />
                               <span>{formatSeconds(start)} - {formatSeconds(end)}</span>
-                              <span className="text-zinc-650">•</span>
+                              <span className="text-zinc-600">•</span>
                               <span className="text-primary/80 font-bold">{(end - start).toFixed(0)}s duration</span>
                             </div>
                             
@@ -641,7 +661,7 @@ export default function ClippingStudio({
                             loop
                             muted
                             playsInline
-                            onMouseOver={(e) => e.target.play()}
+                            onMouseOver={(e) => { const p = e.target.play(); if (p && typeof p.catch === "function") p.catch(() => {}); }}
                             onMouseOut={(e) => {
                               e.target.pause();
                               e.target.currentTime = 0;
@@ -653,6 +673,7 @@ export default function ClippingStudio({
                             <button
                               type="button"
                               title="Fullscreen"
+                              aria-label="View clip fullscreen"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setFullscreenUrl(clipUrl);
@@ -669,6 +690,7 @@ export default function ClippingStudio({
                             <button
                               type="button"
                               title="Copy Link"
+                              aria-label="Copy clip link"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 copyToClipboard(clipUrl);
@@ -680,6 +702,7 @@ export default function ClippingStudio({
                             <button
                               type="button"
                               title="Download"
+                              aria-label="Download clip"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 downloadVideo(clipUrl, `clip-${i + 1}.mp4`);
@@ -737,11 +760,12 @@ export default function ClippingStudio({
             <button
               type="button"
               title={videoUrl ? "Clear video" : "Upload source video"}
+              aria-label={videoUrl ? "Clear video" : "Upload source video"}
               onClick={() => videoUrl ? clearVideoUpload() : videoFileInputRef.current?.click()}
               className={`w-10 h-10 shrink-0 rounded-full border transition-all flex items-center justify-center relative overflow-hidden ${
                 videoUrl 
-                  ? "border-[#22d3ee]/60 bg-[#22d3ee]/5" 
-                  : "bg-white/5 border-white/[0.03] hover:bg-white/10 hover:border-[#22d3ee]/40"
+                  ? "border-primary/60 bg-primary/5" 
+                  : "bg-white/5 border-white/[0.03] hover:bg-white/10 hover:border-primary/40"
               } group`}
             >
               {videoUploading ? (
@@ -757,24 +781,24 @@ export default function ClippingStudio({
                       fill="transparent"
                       strokeDasharray={88}
                       strokeDashoffset={88 - (88 * videoProgress) / 100}
-                      className="text-[#22d3ee] transition-all duration-300"
+                      className="text-primary transition-all duration-300"
                     />
                   </svg>
-                  <span className="absolute text-[8px] font-black text-[#22d3ee] leading-none">
+                  <span className="absolute text-[8px] font-black text-primary leading-none">
                     {videoProgress}%
                   </span>
                 </div>
               ) : null}
 
               {videoUrl ? (
-                <div className="w-full h-full flex items-center justify-center bg-[#22d3ee]/10 text-[#22d3ee]">
+                <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <polygon points="23 7 16 12 23 17 23 7" />
                     <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
                   </svg>
                 </div>
               ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/40 group-hover:text-[#22d3ee] transition-colors">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/40 group-hover:text-primary transition-colors">
                   <polygon points="23 7 16 12 23 17 23 7" />
                   <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
                 </svg>
@@ -787,7 +811,14 @@ export default function ClippingStudio({
                 ref={textareaRef}
                 value={videoUrl}
                 onChange={handleUrlInput}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                    e.preventDefault();
+                    if (!isGenerating) handleGenerate();
+                  }
+                }}
                 placeholder="Upload a video file or paste a video S3 URL here..."
+                aria-label="Video URL"
                 rows={1}
                 className="w-full bg-transparent border-none text-white text-sm placeholder:text-white/20 focus:outline-none resize-none pt-1 leading-relaxed min-h-[40px] max-h-[150px] overflow-y-auto custom-scrollbar disabled:opacity-40"
               />
@@ -815,7 +846,7 @@ export default function ClippingStudio({
               
               {/* Model Identifier (C) */}
               <div className="flex items-center gap-2 px-3 py-2 bg-white/[0.03] rounded-md border border-white/[0.03] whitespace-nowrap">
-                <div className="w-4 h-4 bg-[#22d3ee] rounded flex items-center justify-center shadow-lg shadow-[#22d3ee]/10">
+                <div className="w-4 h-4 bg-primary rounded flex items-center justify-center shadow-lg shadow-primary/10">
                   <span className="text-[9px] font-bold text-black uppercase">C</span>
                 </div>
                 <span className="text-[11px] font-semibold text-white/70">
@@ -833,14 +864,14 @@ export default function ClippingStudio({
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-40 text-white">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                   </svg>
-                  <span className="text-[11px] font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
+                  <span className="text-[11px] font-semibold text-white/70 group-hover:text-primary transition-colors">
                     {aspectRatio}
                   </span>
                   <ChevronDownIcon />
                 </button>
                 {aspectDropdownOpen && (
                   <div className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-lg p-3 shadow-2xl border border-white/[0.05] min-w-[160px]">
-                    <div className="text-xs font-bold text-white/20 border-b border-white/[0.03] mb-2">
+                    <div className="text-xs font-bold text-white/50 uppercase tracking-wide border-b border-white/[0.03] mb-2 pb-1.5">
                       Aspect Ratio
                     </div>
                     <div className="flex flex-col gap-1 max-h-60 overflow-y-auto custom-scrollbar">
@@ -872,14 +903,14 @@ export default function ClippingStudio({
                   className="flex items-center gap-2 px-3 py-2 bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.03] group whitespace-nowrap"
                 >
                   <ClockIcon />
-                  <span className="text-[11px] font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
+                  <span className="text-[11px] font-semibold text-white/70 group-hover:text-primary transition-colors">
                     {numHighlights} Highlights
                   </span>
                   <ChevronDownIcon />
                 </button>
                 {highlightsDropdownOpen && (
                   <div className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-md p-3 shadow-2xl border border-white/10 min-w-[180px]">
-                    <div className="text-xs font-bold text-white/20 border-b border-white/[0.03] mb-3">
+                    <div className="text-xs font-bold text-white/50 uppercase tracking-wide border-b border-white/[0.03] mb-3 pb-1.5">
                       Max Highlights
                     </div>
                     <div className="space-y-3">
@@ -896,7 +927,7 @@ export default function ClippingStudio({
                         step="1"
                         value={numHighlights}
                         onChange={(e) => setNumHighlights(Number(e.target.value))}
-                        className="w-full h-1 bg-zinc-850 rounded appearance-none cursor-pointer accent-primary"
+                        className="w-full h-1 bg-zinc-800 rounded appearance-none cursor-pointer accent-primary"
                       />
                     </div>
                   </div>
@@ -906,10 +937,12 @@ export default function ClippingStudio({
               {/* Return Coordinates Toggle */}
               <button
                 type="button"
+                aria-pressed={returnCoordinatesOnly}
+                aria-label="Toggle coordinates-only mode"
                 onClick={() => setReturnCoordinatesOnly(!returnCoordinatesOnly)}
                 className={`flex items-center gap-2 px-3 py-2 rounded-md transition-all border whitespace-nowrap text-[11px] font-semibold ${
                   returnCoordinatesOnly 
-                    ? "bg-primary/10 border-primary/20 text-[#22d3ee]" 
+                    ? "bg-primary/10 border-primary/20 text-primary" 
                     : "bg-white/[0.03] border-white/[0.03] text-white/70 hover:bg-white/[0.06] hover:text-white"
                 }`}
               >
@@ -924,7 +957,8 @@ export default function ClippingStudio({
               type="button"
               onClick={handleGenerate}
               disabled={isGenerating}
-              className="bg-[#22d3ee] text-black px-4 py-2 rounded-md font-medium text-sm hover:bg-[#e5ff33] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 w-full sm:w-auto shadow-lg shadow-[#22d3ee]/10 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider"
+              aria-label="Generate clips"
+              className="bg-primary text-black px-4 py-2 rounded-md font-medium text-sm hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 w-full sm:w-auto shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:brightness-100 uppercase tracking-wider"
             >
               {isGenerating ? (
                 <>
@@ -941,6 +975,54 @@ export default function ClippingStudio({
           </div>
         </div>
       </div>
+
+      {/* ─── FULLSCREEN CLIP MODAL ─── */}
+      {fullscreenUrl && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Clip preview"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm animate-fade-in"
+          onClick={() => setFullscreenUrl(null)}
+        >
+          <button
+            type="button"
+            aria-label="Close clip preview"
+            className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors border border-white/10"
+            onClick={(e) => {
+              e.stopPropagation();
+              setFullscreenUrl(null);
+            }}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+          <video
+            src={fullscreenUrl}
+            controls
+            autoPlay
+            loop
+            className="max-w-[95vw] max-h-[95vh] rounded-2xl shadow-2xl object-contain animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
+      {/* Non-blocking toast notifications (replaces native alert) */}
+      <Toaster
+        position="bottom-right"
+        reverseOrder={false}
+        toastOptions={{
+          style: {
+            background: "#0a0a0a",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.1)",
+            fontSize: "13px",
+          },
+        }}
+      />
 
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar {
