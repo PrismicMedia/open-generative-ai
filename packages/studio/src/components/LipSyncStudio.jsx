@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import toast, { Toaster } from "react-hot-toast";
 import { processLipSync, uploadFile } from "../muapi.js";
 import {
   lipsyncModels,
@@ -61,6 +62,11 @@ function MediaPickerButton({
       title={
         uploadState === UPLOAD_STATE.READY
           ? `${fileName} — click to clear`
+          : `Upload ${label.toLowerCase()} file`
+      }
+      aria-label={
+        uploadState === UPLOAD_STATE.READY
+          ? `Clear ${label.toLowerCase()} (${fileName})`
           : `Upload ${label.toLowerCase()} file`
       }
       onClick={handleClick}
@@ -186,8 +192,15 @@ function Dropdown({ isOpen, items, selectedId, onSelect, onClose, anchorRef }) {
         onClose();
       }
     };
+    const keyHandler = (e) => {
+      if (e.key === "Escape") onClose();
+    };
     window.addEventListener("click", handler);
-    return () => window.removeEventListener("click", handler);
+    window.addEventListener("keydown", keyHandler);
+    return () => {
+      window.removeEventListener("click", handler);
+      window.removeEventListener("keydown", keyHandler);
+    };
   }, [isOpen, onClose, anchorRef]);
 
   if (!isOpen) return null;
@@ -467,11 +480,21 @@ export default function LipSyncStudio({
     setSelectedResolution(first.inputs?.resolution?.default ?? "480p");
   }, [inputMode]);
 
+  // ── close fullscreen viewer on Escape ────────────────────────────────────
+  useEffect(() => {
+    if (!fullscreenUrl) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setFullscreenUrl(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreenUrl]);
+
   // ── Upload handlers ─────────────────────────────────────────────────────
   const handleImageUpload = useCallback(
     async (file) => {
       if (file.size > 10 * 1024 * 1024) {
-        alert("Image exceeds 10MB limit.");
+        toast.error("Image exceeds 10MB limit.");
         return;
       }
       setImageState(UPLOAD_STATE.UPLOADING);
@@ -485,7 +508,7 @@ export default function LipSyncStudio({
         setImageState(UPLOAD_STATE.READY);
       } catch (err) {
         setImageState(UPLOAD_STATE.IDLE);
-        alert(`Image upload failed: ${err.message}`);
+        toast.error(`Image upload failed: ${err.message}`);
       } finally {
         setImageProgress(0);
       }
@@ -496,7 +519,7 @@ export default function LipSyncStudio({
   const handleVideoPick = useCallback(
     async (file) => {
       if (file.size > 50 * 1024 * 1024) {
-        alert("Video exceeds 50MB limit.");
+        toast.error("Video exceeds 50MB limit.");
         return;
       }
       setVideoState(UPLOAD_STATE.UPLOADING);
@@ -510,7 +533,7 @@ export default function LipSyncStudio({
         setVideoState(UPLOAD_STATE.READY);
       } catch (err) {
         setVideoState(UPLOAD_STATE.IDLE);
-        alert(`Video upload failed: ${err.message}`);
+        toast.error(`Video upload failed: ${err.message}`);
       } finally {
         setVideoProgress(0);
       }
@@ -521,7 +544,7 @@ export default function LipSyncStudio({
   const handleAudioPick = useCallback(
     async (file) => {
       if (file.size > 10 * 1024 * 1024) {
-        alert("Audio file exceeds 10MB limit.");
+        toast.error("Audio file exceeds 10MB limit.");
         return;
       }
       setAudioState(UPLOAD_STATE.UPLOADING);
@@ -535,7 +558,7 @@ export default function LipSyncStudio({
         setAudioState(UPLOAD_STATE.READY);
       } catch (err) {
         setAudioState(UPLOAD_STATE.IDLE);
-        alert(`Audio upload failed: ${err.message}`);
+        toast.error(`Audio upload failed: ${err.message}`);
       } finally {
         setAudioProgress(0);
       }
@@ -616,15 +639,15 @@ export default function LipSyncStudio({
   // ── Generation ──────────────────────────────────────────────────────────
   const handleGenerate = async () => {
     if (!audioUrl) {
-      alert("Please upload an audio file first.");
+      toast.error("Please upload an audio file first.");
       return;
     }
     if (inputMode === "image" && !imageUrl) {
-      alert("Please upload a portrait image first.");
+      toast.error("Please upload a portrait image first.");
       return;
     }
     if (inputMode === "video" && !videoUrl) {
-      alert("Please upload a source video first.");
+      toast.error("Please upload a source video first.");
       return;
     }
 
@@ -660,6 +683,7 @@ export default function LipSyncStudio({
       setActiveResultUrl(res.url);
       setActiveHistoryIdx(0);
       setView("result");
+      toast.success("Lip sync ready");
 
       if (onGenerationComplete) {
         onGenerationComplete({
@@ -671,7 +695,9 @@ export default function LipSyncStudio({
       }
     } catch (e) {
       console.error("[LipSyncStudio]", e);
-      setGenerateError(e.message?.slice(0, 80) ?? "Unknown error");
+      const msg = e.message?.slice(0, 100) ?? "Unknown error";
+      setGenerateError(msg.slice(0, 80));
+      toast.error(msg);
       setTimeout(() => setGenerateError(null), 4000);
     } finally {
       setIsGenerating(false);
@@ -728,40 +754,83 @@ export default function LipSyncStudio({
       
       {/* ── CENTRAL GALLERY AREA ── */}
       <div className="flex-1 w-full max-w-7xl mx-auto overflow-y-auto custom-scrollbar pb-40 lg:pb-32 px-2">
-        {history.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full pt-4 animate-fade-in-up">
+        {isGenerating || history.length > 0 ? (
+          <div className="w-full pt-4">
+            <div className="flex items-center justify-between pb-3 px-1">
+              <span className="text-xs font-bold text-white/40 tracking-wide uppercase">
+                {history.length} {history.length === 1 ? "result" : "results"}
+              </span>
+              {(imageUrl || videoUrl || audioUrl || prompt) && (
+                <button
+                  type="button"
+                  onClick={handleNew}
+                  aria-label="Clear current inputs"
+                  className="text-[11px] font-semibold text-white/50 hover:text-primary transition-colors flex items-center gap-1.5"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full animate-fade-in-up">
+            {isGenerating && (
+              <div className="relative rounded-2xl overflow-hidden border border-primary/30 bg-[#0a0a0a] shadow-xl">
+                <div className="w-full aspect-video bg-gradient-to-br from-white/[0.03] to-white/[0.08] animate-pulse flex flex-col items-center justify-center gap-2">
+                  <span className="animate-spin inline-block text-primary text-2xl leading-none">◌</span>
+                  <span className="text-[10px] font-bold text-white/50 tracking-wide uppercase">Syncing…</span>
+                </div>
+              </div>
+            )}
             {history.map((entry, idx) => (
               <div
                 key={entry.id || idx}
                 className="relative group rounded-2xl overflow-hidden border border-white/10 bg-[#0a0a0a] shadow-xl hover:border-primary/50 transition-all duration-300 flex flex-col"
               >
-                <video
-                  src={entry.url}
-                  className="w-full aspect-video object-cover bg-black/40 cursor-pointer hover:opacity-80 transition-opacity"
-                  onClick={() => setFullscreenUrl(entry.url)}
-                  controls={false}
-                  loop
-                  muted
-                  playsInline
-                  onMouseOver={(e) => e.target.play()}
-                  onMouseOut={(e) => {
-                    e.target.pause();
-                    e.target.currentTime = 0;
-                  }}
-                />
+                <div className="relative">
+                  <video
+                    src={entry.url}
+                    aria-label="Generated lip-sync video"
+                    className="w-full aspect-video object-cover bg-black/40 cursor-pointer hover:opacity-80 transition-opacity"
+                    onClick={() => setFullscreenUrl(entry.url)}
+                    controls={false}
+                    loop
+                    muted
+                    playsInline
+                    preload="metadata"
+                    onMouseOver={(e) => {
+                      const p = e.target.play();
+                      if (p && typeof p.catch === "function") p.catch(() => {});
+                    }}
+                    onMouseOut={(e) => {
+                      e.target.pause();
+                      e.target.currentTime = 0;
+                    }}
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-100 group-hover:opacity-0 transition-opacity duration-300">
+                    <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-lg">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" className="text-white/90 translate-x-0.5" aria-hidden="true">
+                        <polygon points="5 3 19 12 5 21 5 3" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
                 
                 {/* Overlay actions */}
                 <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     type="button"
                     title="Fullscreen"
+                    aria-label="View video fullscreen"
                     onClick={(e) => {
                       e.stopPropagation();
                       setFullscreenUrl(entry.url);
                     }}
                     className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
                       <polyline points="15 3 21 3 21 9" />
                       <polyline points="9 21 3 21 3 15" />
                       <line x1="21" y1="3" x2="14" y2="10" />
@@ -771,13 +840,14 @@ export default function LipSyncStudio({
                   <button
                     type="button"
                     title="Download"
+                    aria-label="Download video"
                     onClick={(e) => {
                       e.stopPropagation();
                       downloadFile(entry.url, `lipsync-${entry.id || idx}.mp4`);
                     }}
                     className="p-2 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-primary hover:text-black transition-all border border-white/10"
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
                       <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
                     </svg>
                   </button>
@@ -796,6 +866,7 @@ export default function LipSyncStudio({
                 </div>
               </div>
             ))}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full animate-fade-in-up transition-all duration-700 min-h-[50vh]">
@@ -832,6 +903,7 @@ export default function LipSyncStudio({
             <button
               type="button"
               onClick={switchToImage}
+              aria-pressed={inputMode === "image"}
               className={`px-3 py-1 rounded-md text-xs font-bold transition-all border ${
                 inputMode === "image"
                   ? "border-primary/60 bg-primary/5 text-primary"
@@ -843,7 +915,8 @@ export default function LipSyncStudio({
             <button
               type="button"
               onClick={switchToVideo}
-              className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all border ${
+              aria-pressed={inputMode === "video"}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition-all border ${
                 inputMode === "video"
                   ? "border-primary/60 bg-primary/5 text-primary"
                   : "border-white/[0.03] bg-white/[0.03] text-white/40 hover:border-white/20 hover:text-white"
@@ -942,10 +1015,20 @@ export default function LipSyncStudio({
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                      e.preventDefault();
+                      if (!isGenerating) handleGenerate();
+                    }
+                  }}
                   placeholder="Describe speech style..."
+                  aria-label="Speech style prompt"
                   className="w-full bg-transparent border-none text-white text-sm placeholder:text-white/10 focus:outline-none resize-none pt-1 leading-relaxed min-h-[40px] max-h-[150px] md:max-h-[250px] overflow-y-auto custom-scrollbar disabled:opacity-40"
                   rows={1}
                 />
+                {prompt.length > 0 && (
+                  <span className="text-[10px] text-white/30 self-end pr-1 select-none">{prompt.length} chars</span>
+                )}
               </div>
             )}
           </div>
@@ -966,12 +1049,12 @@ export default function LipSyncStudio({
                   }}
                   className="flex items-center gap-2 px-2 py-1.5 bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.03] group whitespace-nowrap"
                 >
-                  <div className="w-3.5 h-3.5 bg-[#22d3ee] rounded-sm flex items-center justify-center">
+                  <div className="w-3.5 h-3.5 bg-primary rounded-sm flex items-center justify-center">
                     <span className="text-[9px] font-black text-black">
                       S
                     </span>
                   </div>
-                  <span className="text-xs font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
+                  <span className="text-xs font-semibold text-white/70 group-hover:text-primary transition-colors">
                     {selectedModel?.name ?? "Select model"}
                   </span>
                   <svg
@@ -1010,7 +1093,7 @@ export default function LipSyncStudio({
                     }}
                     className="flex items-center gap-2 px-2 py-1.5 bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.03] group whitespace-nowrap"
                   >
-                    <span className="text-xs font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
+                    <span className="text-xs font-semibold text-white/70 group-hover:text-primary transition-colors">
                       {selectedResolution}
                     </span>
                   </button>
@@ -1031,7 +1114,8 @@ export default function LipSyncStudio({
               type="button"
               onClick={handleGenerate}
               disabled={isGenerating}
-              className="bg-[#22d3ee] text-black px-4 py-2 rounded-md font-medium text-sm hover:bg-[#e5ff33] hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 w-full sm:w-auto shadow-lg shadow-[#22d3ee]/10 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Generate lip sync"
+              className="bg-primary text-black px-4 py-2 rounded-md font-medium text-sm hover:brightness-110 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-2 w-full sm:w-auto shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:brightness-100"
             >
               {isGenerating ? (
                 <>
@@ -1054,12 +1138,16 @@ export default function LipSyncStudio({
 
       {/* ── FULLSCREEN MEDIA MODAL ── */}
       {fullscreenUrl && (
-        <div 
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Video preview"
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm animate-fade-in"
           onClick={() => setFullscreenUrl(null)}
         >
           <button
             type="button"
+            aria-label="Close video preview"
             className="absolute top-6 right-6 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors border border-white/10"
             onClick={(e) => {
               e.stopPropagation();
@@ -1071,16 +1159,30 @@ export default function LipSyncStudio({
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
-          <video 
-            src={fullscreenUrl} 
-            controls 
-            autoPlay 
-            loop 
-            className="max-w-[95vw] max-h-[95vh] rounded-2xl shadow-2xl object-contain animate-scale-up" 
+          <video
+            src={fullscreenUrl}
+            controls
+            autoPlay
+            loop
+            className="max-w-[95vw] max-h-[95vh] rounded-2xl shadow-2xl object-contain animate-scale-up"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
       )}
+
+      {/* Non-blocking toast notifications (replaces native alert) */}
+      <Toaster
+        position="bottom-right"
+        reverseOrder={false}
+        toastOptions={{
+          style: {
+            background: "#0a0a0a",
+            color: "#fff",
+            border: "1px solid rgba(255,255,255,0.1)",
+            fontSize: "13px",
+          },
+        }}
+      />
     </div>
   );
 }
